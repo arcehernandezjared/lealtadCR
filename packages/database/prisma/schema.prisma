@@ -300,6 +300,7 @@ model Customer {
   referralsAsReferrer Referral[] @relation("ReferrerCustomer")
   referralsAsReferred Referral[] @relation("ReferredCustomer")
   automationExecutions AutomationExecution[]
+  pushSubscriptions PushSubscription[]
 
   @@index([businessId])
   @@index([businessId, email])
@@ -638,6 +639,24 @@ model Notification {
   @@index([businessId])
   @@index([customerId])
   @@map("notifications")
+}
+
+/// Suscripcion Web Push (VAPID) de un navegador de cliente. Un cliente puede
+/// tener varias (distintos dispositivos/navegadores). Se usa para el canal
+/// WEB_PUSH, distinto de una actualizacion de Wallet o de un email.
+model PushSubscription {
+  id         String   @id @default(cuid())
+  publicId   String   @unique @default(uuid())
+  customerId String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("push_subscriptions")
 }
 
 /// triggerType/conditions/actions son Json/String validados en la capa de aplicacion

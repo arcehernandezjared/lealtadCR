@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Wallet, Gift, Clock } from "lucide-react";
+import { Wallet, Gift, Clock, Bell, BellRing } from "lucide-react";
 import { portalFetch, PortalApiError } from "./portal-api";
+import { isPushSupported, subscribeToPush } from "./push-notifications";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
+const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY as string | undefined;
 
 interface PortalAccount {
   id: string | null;
@@ -45,6 +47,8 @@ export function CustomerPortalPage() {
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [walletMessage, setWalletMessage] = useState<string | null>(null);
   const [walletLoading, setWalletLoading] = useState<"apple" | "google" | null>(null);
+  const [pushState, setPushState] = useState<"idle" | "loading" | "active" | "error">("idle");
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!qrCode) return;
@@ -114,6 +118,28 @@ export function CustomerPortalPage() {
       setWalletMessage(err instanceof PortalApiError ? err.message : "No se pudo agregar la tarjeta a Google Wallet");
     } finally {
       setWalletLoading(null);
+    }
+  }
+
+  async function handleActivatePush() {
+    if (!token) return;
+    if (!VAPID_PUBLIC_KEY) {
+      setPushState("error");
+      setPushMessage("Las notificaciones push no estan configuradas en este entorno.");
+      return;
+    }
+    setPushState("loading");
+    setPushMessage(null);
+    try {
+      const subscription = await subscribeToPush(VAPID_PUBLIC_KEY);
+      await portalFetch("/api/portal/push-subscription", token, {
+        method: "POST",
+        body: JSON.stringify(subscription),
+      });
+      setPushState("active");
+    } catch (err) {
+      setPushState("error");
+      setPushMessage(err instanceof Error ? err.message : "No se pudo activar las notificaciones");
     }
   }
 
@@ -205,6 +231,22 @@ export function CustomerPortalPage() {
             {walletMessage && (
               <p className="mt-2 text-center text-xs text-ink-500">{walletMessage}</p>
             )}
+
+            {isPushSupported() && (
+              <button
+                onClick={handleActivatePush}
+                disabled={pushState === "loading" || pushState === "active"}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-ink-200 bg-white py-3 text-sm font-medium text-ink-700 disabled:opacity-60"
+              >
+                {pushState === "active" ? <BellRing className="h-4 w-4 text-green-600" /> : <Bell className="h-4 w-4" />}
+                {pushState === "active"
+                  ? "Notificaciones activadas"
+                  : pushState === "loading"
+                    ? "Activando..."
+                    : "Activar notificaciones"}
+              </button>
+            )}
+            {pushMessage && <p className="mt-2 text-center text-xs text-ink-500">{pushMessage}</p>}
 
             <section className="mt-8">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-900">

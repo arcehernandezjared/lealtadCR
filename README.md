@@ -4,17 +4,21 @@ SaaS multi-tenant para programas de fidelización digital: tarjetas de lealtad
 para Apple Wallet y Google Wallet, puntos, recompensas, niveles, automatizaciones
 y analytics para negocios con uno o varios locales.
 
-> **Estado actual: Fase 4 completada.** Arquitectura, base de datos completa,
+> **Estado actual: Fase 5 completada.** Arquitectura, base de datos completa,
 > autenticación, multi-tenancy, dashboard, programas de lealtad, motor de
 > reglas, clientes, visitas/compras, niveles, recompensas (con canje por
 > código), QR por cliente, portal del cliente (móvil, sin login), interfaz
-> de empleado, y la integración real (no simulada) de Apple Wallet y Google
-> Wallet están implementados y probados. **Apple/Google Wallet están
-> completos en código pero necesitan tus credenciales reales para emitir
-> passes de verdad** — ver [docs/APPLE_WALLET.md](docs/APPLE_WALLET.md) y
-> [docs/GOOGLE_WALLET.md](docs/GOOGLE_WALLET.md). Notificaciones/automatizaciones
-> (Fase 5) y analytics avanzado/suscripciones (Fase 6) siguen el plan de
-> fases descrito en `docs/ARCHITECTURE.md`.
+> de empleado, Apple Wallet/Google Wallet, notificaciones multicanal
+> (EMAIL, WEB_PUSH real, WALLET_UPDATE — WHATSAPP queda como canal
+> preparado sin credenciales), campañas segmentadas y automatizaciones
+> (por evento y programadas) están implementados y probados.
+> **Apple/Google Wallet están completos en código pero necesitan tus
+> credenciales reales para emitir passes de verdad** — ver
+> [docs/APPLE_WALLET.md](docs/APPLE_WALLET.md) y
+> [docs/GOOGLE_WALLET.md](docs/GOOGLE_WALLET.md). Web Push, en cambio, ya
+> funciona de verdad en este repo (llaves VAPID autogeneradas, sin cuenta
+> externa que tramitar). Analytics avanzado/suscripciones (Fase 6) sigue el
+> plan de fases descrito en `docs/ARCHITECTURE.md`.
 
 ## Stack
 
@@ -77,9 +81,10 @@ Apple Wallet y Google Wallet son opcionales hasta la Fase 4 — ver
 ## Tests
 
 ```bash
-pnpm --filter @loyaltycr/shared test   # unitarios (hashing, codigos, roles)
-pnpm --filter @loyaltycr/wallet test   # unitarios (firma PKCS#7 real con cert de prueba, JWT de Google Wallet)
-pnpm --filter @loyaltycr/api test      # integracion (auth, aislamiento multi-tenant, motor de reglas/recompensas, portal/QR, wallet)
+pnpm --filter @loyaltycr/shared test         # unitarios (hashing, codigos, roles)
+pnpm --filter @loyaltycr/wallet test         # unitarios (firma PKCS#7 real con cert de prueba, JWT de Google Wallet)
+pnpm --filter @loyaltycr/notifications test  # unitarios (envio Web Push real via la libreria web-push)
+pnpm --filter @loyaltycr/api test            # integracion (auth, multi-tenant, reglas/recompensas, portal/QR, wallet, notificaciones/automatizaciones/campanas)
 ```
 
 Los tests de API requieren una base de datos de test separada (`apps/api/.env.test`,

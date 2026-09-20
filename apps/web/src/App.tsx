@@ -13,6 +13,8 @@ import { ProgramDetailPage } from "./routes/dashboard/programs/ProgramDetailPage
 import { CustomersPage } from "./routes/dashboard/customers/CustomersPage";
 import { CustomerDetailPage } from "./routes/dashboard/customers/CustomerDetailPage";
 import { PosPage } from "./routes/dashboard/pos/PosPage";
+import { CampaignsPage } from "./routes/dashboard/campaigns/CampaignsPage";
+import { AutomationsPage } from "./routes/dashboard/automations/AutomationsPage";
 import { CustomerPortalPage } from "./routes/portal/CustomerPortalPage";
 
 const queryClient = new QueryClient({
@@ -35,6 +37,8 @@ export function App() {
             <Route path="programs/:programId" element={<ProgramDetailPage />} />
             <Route path="customers" element={<CustomersPage />} />
             <Route path="customers/:customerId" element={<CustomerDetailPage />} />
+            <Route path="campaigns" element={<CampaignsPage />} />
+            <Route path="automations" element={<AutomationsPage />} />
             <Route path="branches" element={<BranchesPage />} />
             <Route path="team" element={<TeamPage />} />
             <Route path="settings" element={<SettingsPage />} />

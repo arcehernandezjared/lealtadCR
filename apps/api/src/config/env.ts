@@ -32,6 +32,11 @@ const envSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default("mailto:soporte@loyaltycr.com"),
+
+  // Reservado para cuando se implemente el canal WHATSAPP (no en Fase 5,
+  // requiere una cuenta de WhatsApp Business API que no tenemos todavia).
+  WHATSAPP_API_TOKEN: z.string().optional(),
+  WHATSAPP_PHONE_NUMBER_ID: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

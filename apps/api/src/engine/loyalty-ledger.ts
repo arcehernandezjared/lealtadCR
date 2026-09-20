@@ -2,6 +2,9 @@ import { prisma, type Prisma, type TransactionType } from "@loyaltycr/database";
 import { generateRedemptionCode } from "@loyaltycr/shared";
 import { logger } from "../lib/logger.js";
 import { notifyWalletsOfChange } from "../modules/wallet/wallet.service.js";
+import { notifyCustomerMultiChannel } from "../modules/notifications/notifications.service.js";
+import { pointsAddedTemplate, tierChangedTemplate, rewardUnlockedTemplate } from "../modules/notifications/templates.js";
+import { evaluateEventAutomations } from "../modules/automations/automations-engine.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -91,15 +94,68 @@ export async function applyLoyaltyDelta(delta: LoyaltyDelta): Promise<LoyaltyDel
     return { account: updatedAccount, transaction, tierChanged, unlockedRedemptions };
   });
 
-  // Fuera de la transaccion (es I/O de red a Apple/Google, no debe alargar
-  // el lock de la transaccion) y sin esperar su resultado: el cliente que
-  // registro la visita/compra no debe esperar a que el wallet se actualice
-  // para recibir su respuesta. notifyWalletsOfChange nunca lanza.
+  // Todo lo de aqui abajo es intencionalmente "fire and forget": son efectos
+  // secundarios de I/O externo (Apple/Google, email, push, evaluar
+  // automatizaciones) que no deben alargar ni bloquear la respuesta al
+  // cliente que disparo el evento original (una visita, una compra, un
+  // ajuste manual). Ninguna de estas funciones lanza hacia afuera.
   void notifyWalletsOfChange(delta.customerId, delta.programId).catch((err) =>
     logger.error({ err }, "notifyWalletsOfChange fallo inesperadamente")
   );
+  void runPostDeltaNotificationsAndAutomations(delta, result).catch((err) =>
+    logger.error({ err }, "runPostDeltaNotificationsAndAutomations fallo inesperadamente")
+  );
 
   return result;
+}
+
+/**
+ * Dispara las notificaciones automaticas (seccion 15: puntos agregados,
+ * cambio de nivel, recompensa desbloqueada) y evalua las automatizaciones
+ * por evento (seccion 16: points_threshold_reached, tier_reached) que
+ * correspondan a este delta. Vive fuera de `applyLoyaltyDelta` para que la
+ * funcion principal del ledger no crezca sin limite cada vez que se agrega
+ * un tipo de notificacion/automatizacion nuevo.
+ */
+async function runPostDeltaNotificationsAndAutomations(delta: LoyaltyDelta, result: LoyaltyDeltaResult): Promise<void> {
+  const program = await prisma.loyaltyProgram.findUnique({ where: { id: delta.programId }, select: { businessId: true } });
+  if (!program) return;
+  const businessId = program.businessId;
+
+  const tasks: Promise<unknown>[] = [];
+
+  if (delta.pointsDelta > 0) {
+    const { type, title, body } = pointsAddedTemplate(delta.pointsDelta, result.account.points);
+    tasks.push(notifyCustomerMultiChannel({ businessId, customerId: delta.customerId, type, title, body }));
+  }
+
+  if (result.tierChanged && result.account.currentTierId) {
+    const tier = await prisma.loyaltyTier.findUnique({ where: { id: result.account.currentTierId } });
+    if (tier) {
+      const { type, title, body } = tierChangedTemplate(tier.name);
+      tasks.push(notifyCustomerMultiChannel({ businessId, customerId: delta.customerId, type, title, body }));
+      tasks.push(evaluateEventAutomations(businessId, delta.customerId, { type: "tier_reached", tierId: tier.id }));
+    }
+  }
+
+  for (const redemption of result.unlockedRedemptions) {
+    tasks.push(
+      prisma.reward.findUnique({ where: { id: redemption.rewardId } }).then((reward) => {
+        if (!reward) return;
+        const { type, title, body } = rewardUnlockedTemplate(reward.name, redemption.code);
+        return notifyCustomerMultiChannel({ businessId, customerId: delta.customerId, type, title, body });
+      })
+    );
+  }
+
+  tasks.push(
+    evaluateEventAutomations(businessId, delta.customerId, {
+      type: "points_threshold_reached",
+      points: result.account.points,
+    })
+  );
+
+  await Promise.all(tasks);
 }
 
 /**

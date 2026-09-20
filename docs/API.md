@@ -11,8 +11,8 @@ Autenticación: `Authorization: Bearer <accessToken>` en cada request
 protegida. El refresh token viaja en una cookie `httpOnly` (`loyaltycr_refresh_token`),
 nunca en el body/header — el cliente nunca debe leerlo.
 
-> Este documento cubre los endpoints implementados hasta la Fase 4. Se irá
-> ampliando en cada fase (notificaciones/campañas en Fase 5, etc.).
+> Este documento cubre los endpoints implementados hasta la Fase 5. Se irá
+> ampliando en cada fase (analytics avanzado/suscripciones en Fase 6, etc.).
 
 ## Auth (`/api/auth`)
 
@@ -100,6 +100,8 @@ puede ver el progreso de ese cliente, sin password. Ver
 | GET | `/history` | token de cliente | Historial de puntos, visitas y compras (solo lectura). |
 | GET | `/wallet/apple/:programId` | token de cliente | Genera y descarga el `.pkpass` firmado. `400` con `error.details.code = "APPLE_WALLET_NOT_CONFIGURED"` si el negocio no tiene credenciales de Apple configuradas. |
 | GET | `/wallet/google/:programId` | token de cliente | `{ saveUrl }` — enlace "Agregar a Google Wallet". `400` con `error.details.code = "GOOGLE_WALLET_NOT_CONFIGURED"` si no hay credenciales de Google. |
+| POST | `/push-subscription` | token de cliente | Registra una suscripción Web Push del navegador (`{ endpoint, keys: { p256dh, auth } }`), creada con la Push API real del navegador. |
+| DELETE | `/push-subscription` | token de cliente | `{ endpoint }` — da de baja una suscripción. |
 
 El token de cliente y el de staff se firman con el mismo secreto pero llevan
 un campo `type` (`"staff"` / `"customer"`) que cada middleware exige
@@ -121,6 +123,45 @@ dispositivo del cliente, nunca nuestro frontend. Ver `docs/APPLE_WALLET.md`.
 | GET | `/passes/:passTypeIdentifier/:serialNumber` | Devuelve el `.pkpass` actualizado. |
 | POST | `/log` | Logging de errores que reporta el dispositivo (sin auth). |
 
+## Notificaciones (`/api/notifications`) — requiere staff autenticado
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/` | Historial de notificaciones enviadas del negocio (últimas 100), para un log de actividad. |
+| GET | `/web-push-config` | `{ configured, publicKey }` — si el canal Web Push tiene llaves VAPID configuradas. |
+
+Ver también `POST/DELETE /api/portal/push-subscription` (arriba, en Portal del
+cliente) para que un cliente active/desactive Web Push desde su navegador.
+
+## Campañas (`/api/campaigns`) — requiere staff autenticado (MANAGER+)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/` | Lista las campañas del negocio. |
+| POST | `/` | Crea una campaña (`{ title, message, segment, channels[], scheduledAt? }`). |
+| PATCH | `/:campaignId` | Actualiza una campaña que aún no se envió. |
+| DELETE | `/:campaignId` | Elimina una campaña que aún no se envió. |
+| POST | `/:campaignId/send` | Resuelve el segmento y despacha una notificación por cliente × canal. `409` si ya se envió. |
+
+`segment` es una de: `{ type: "all" }`, `{ type: "inactive", days }`,
+`{ type: "tier", programId, tierId }`, `{ type: "min_points", programId, points }`.
+
+## Automatizaciones (`/api/automations`) — requiere staff autenticado (OWNER para escribir)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/` | Lista las automatizaciones del negocio. |
+| POST | `/` | Crea una automatización (`{ name, triggerType, conditions, actions[], isActive? }`). |
+| PATCH | `/:automationId` | Actualiza una automatización. |
+| DELETE | `/:automationId` | Elimina una automatización. |
+| GET | `/:automationId/executions` | Últimas 50 ejecuciones (éxito/fallo) de esta automatización. |
+
+`triggerType` y las `actions[].type` válidas vienen de
+`packages/shared/src/rule-engine/automation-triggers.ts`
+(`points_threshold_reached`, `tier_reached` — evaluados en caliente desde el
+ledger; `customer_inactive`, `customer_birthday` — evaluados por el
+scheduler cada hora, ver `apps/api/src/jobs/automation-scheduler.ts`).
+
 ## Admin (`/api/admin`) — requiere `SUPER_ADMIN`
 
 | Método | Ruta | Descripción |
@@ -131,5 +172,4 @@ dispositivo del cliente, nunca nuestro frontend. Ver `docs/APPLE_WALLET.md`.
 
 ## Próximos endpoints (planeados por fase)
 
-- **Fase 5**: `POST /api/campaigns`, `POST /api/automations`.
 - **Fase 6**: `GET /api/subscriptions`, endpoints de billing.

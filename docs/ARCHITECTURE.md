@@ -3,32 +3,32 @@
 ## Visión general
 
 LoyaltyCr es un monorepo (pnpm workspaces + Turborepo) con dos aplicaciones y
-tres paquetes compartidos:
+cuatro paquetes compartidos:
 
 ```
 apps/api      Express + TypeScript. API REST. Toda la lógica de negocio vive aquí.
 apps/web      React + Vite + TypeScript + Tailwind. Landing, auth, dashboard,
               portal del cliente (móvil, sin login) e interfaz de empleado (POS).
-packages/database  Prisma schema + cliente singleton + extension de aislamiento
-                    multi-tenant + seed de datos de desarrollo.
-packages/shared     Tipos, schemas de validación (zod), registro extensible de
-                    eventos/acciones del motor de reglas, utilidades de auth
-                    (hashing de passwords, tipos de tokens), manejo de errores.
-packages/wallet     Generación/firma de .pkpass (Apple), cliente de la Google
-                    Wallet API, y las piezas de cada protocolo que no dependen
-                    de la base de datos (JWTs, PKCS#7, PNG placeholder, APNs).
+packages/database       Prisma schema + cliente singleton + extension de aislamiento
+                         multi-tenant + seed de datos de desarrollo.
+packages/shared          Tipos, schemas de validación (zod), registro extensible de
+                         eventos/acciones del motor de reglas, utilidades de auth
+                         (hashing de passwords, tipos de tokens), manejo de errores.
+packages/wallet          Generación/firma de .pkpass (Apple), cliente de la Google
+                         Wallet API, y las piezas de cada protocolo que no dependen
+                         de la base de datos (JWTs, PKCS#7, PNG placeholder, APNs).
+packages/notifications   Envío de Web Push real (VAPID) sin tocar Prisma — igual
+                         filosofía que packages/wallet.
 ```
 
-`packages/database`, `packages/shared` y `packages/wallet` no dependen de
-`apps/*`: son librerías internas consumidas por el backend (y, en el caso de
-`shared`, también por el frontend). `packages/wallet` en particular está
-diseñado para no tocar Prisma directamente — solo recibe los datos que ya
-resolvió `apps/api/src/modules/wallet`, para poder testear la generación de
-passes con certificados de prueba sin necesitar una base de datos.
-
-`packages/notifications`, mencionado en el brief original, se creará en la
-Fase 5, cuando haya código real que lo justifique (evitar paquetes vacíos de
-antemano).
+`packages/database`, `packages/shared`, `packages/wallet` y
+`packages/notifications` no dependen de `apps/*`: son librerías internas
+consumidas por el backend (y, en el caso de `shared`, también por el
+frontend). `packages/wallet` y `packages/notifications` en particular están
+diseñados para no tocar Prisma directamente — solo reciben los datos que ya
+resolvió el módulo correspondiente de `apps/api`, para poder testear la
+generación de passes/envíos con credenciales de prueba sin necesitar una
+base de datos.
 
 ## Multi-tenancy
 
@@ -221,6 +221,73 @@ que no son obvias leyendo el código:
   API REST y el propio Google notifica al dispositivo. No hay una
   abstracción comun que finja que ambas plataformas funcionan igual.
 
+## Notificaciones, campañas y automatizaciones (Fase 5)
+
+**Cuatro canales, cuatro mecanismos de entrega distintos** (sección 15 del
+brief) — `apps/api/src/modules/notifications/notifications.service.ts`
+nunca trata "notificación" como una sola cosa:
+
+| Canal | Cómo entrega | Requiere |
+|---|---|---|
+| `EMAIL` | `apps/api/src/lib/email.ts` (Fase 1) | `customer.email` |
+| `WEB_PUSH` | Push API del navegador real, vía `packages/notifications` (VAPID) | Una `PushSubscription` activa del cliente |
+| `WALLET_UPDATE` | Delega en `notifyWalletsOfChange()` (Fase 4) — push-to-pull en Apple, `PATCH` directo en Google | Un `WalletPass` ya emitido |
+| `WHATSAPP` | No implementado — falla explícitamente con un mensaje claro, mismo principio que Apple/Google Wallet sin credenciales | Cuenta de WhatsApp Business API (no disponible) |
+
+Cada intento queda como una fila de `Notification` (`PENDING` → `SENT`/`FAILED`
+con el motivo del fallo en `metadata`), sea cual sea el canal — es el log de
+auditoría de "qué se le dijo a cada cliente y cómo" que pide la sección 26.
+
+**Web Push es el único canal de esta fase que funciona de verdad sin pedirle
+nada externo al usuario** (a diferencia de Wallet/WhatsApp): las llaves VAPID
+se generan una vez (`npx web-push generate-vapid-keys`, ver `.env.example`) y
+no requieren aprobación de terceros. El flujo completo está implementado:
+Service Worker (`apps/web/public/sw.js`) → `subscribeToPush()` en el portal
+(Push API real del navegador) → `POST /api/portal/push-subscription` →
+`packages/notifications` envía contra el endpoint real del navegador
+(FCM/Mozilla/etc. segun el navegador) usando la librería `web-push`.
+
+**Notificaciones automáticas son "fire and forget" desde el ledger**, igual
+que la actualización de Wallet: `runPostDeltaNotificationsAndAutomations()`
+en `apps/api/src/engine/loyalty-ledger.ts` se llama sin `await` después de
+que la transacción de puntos ya confirmó, para que enviar un email o evaluar
+automatizaciones nunca alargue la respuesta HTTP de una visita/compra. Esto
+tiene una consecuencia real para quien escriba tests: verificar que una
+notificación se creó requiere sondear (`waitFor` con reintentos cortos) en
+vez de asumir que ya existe apenas responde la request original — ver
+`apps/api/tests/helpers/wait-for.ts` y su uso en
+`tests/notifications-automations-campaigns.test.ts`.
+
+**Motor de automatizaciones** (`apps/api/src/modules/automations/automations-engine.ts`),
+dos formas de evaluación según `AUTOMATION_TRIGGERS[...].evaluation`
+(`packages/shared/src/rule-engine/automation-triggers.ts`):
+
+- **Por evento** (`points_threshold_reached`, `tier_reached`): se evalúan en
+  caliente desde el mismo hook del ledger que dispara las notificaciones.
+  `points_threshold_reached` se deduplica para dispararse **una sola vez por
+  cliente** (revisando si ya existe una `AutomationExecution` exitosa
+  previa) — funciona como un logro de una sola vez, no como un umbral que se
+  re-dispara cada vez que el balance sigue por encima. `tier_reached` sí
+  puede volver a dispararse (un cliente puede bajar de nivel por un ajuste
+  manual y volver a subir legítimamente).
+- **Programadas** (`customer_inactive`, `customer_birthday`): evaluadas por
+  `runScheduledAutomations()`, invocado cada hora por un `setInterval` en el
+  mismo proceso (`apps/api/src/jobs/automation-scheduler.ts`) — **limitación
+  conocida y aceptada**: sirve para un despliegue de una sola instancia; si
+  LoyaltyCr llegara a correr en varias instancias a la vez habría que mover
+  esto a un cron externo o una cola dedicada, documentado en el propio
+  archivo en vez de resolverse con infraestructura que todavía no hace falta.
+  Es idempotente dentro de una ventana de ~20h para que correr el scheduler
+  varias veces al día no duplique notificaciones.
+
+Las acciones de una automatización (`add_points`, `send_notification`,
+`update_wallet`, `create_reward_unlock`) reutilizan las mismas funciones que
+ya usan las reglas/ledger/wallet en vez de reimplementar su propia versión —
+una automatización que agrega puntos pasa por `applyLoyaltyDelta()` como
+cualquier otro origen de puntos, así que también puede a su vez desbloquear
+recompensas, cambiar de nivel o disparar otra automatización, encadenando de
+forma consistente con el resto del sistema.
+
 ## Analytics
 
 Los modelos "indirectos" (sin `businessId` propio) se consultan con el
@@ -238,7 +305,7 @@ no haber una forma portable de agrupar por día con el query builder de Prisma.
 2. **Fase 2 (completada)**: clientes, puntos, visitas, motor de reglas activo, recompensas, niveles.
 3. **Fase 3 (completada)**: QR por cliente, portal del cliente, interfaz de empleado (POS).
 4. **Fase 4 (completada, sin credenciales reales aun)**: Apple Wallet y Google Wallet (ver docs/APPLE_WALLET.md y docs/GOOGLE_WALLET.md).
-5. **Fase 5**: notificaciones multicanal, campañas, automatizaciones.
+5. **Fase 5 (completada)**: notificaciones multicanal, campañas, automatizaciones.
 6. **Fase 6**: analytics avanzado, suscripciones/planes con límites reales, administración global.
 7. **Fase 7**: testing exhaustivo, hardening de seguridad, optimización, deployment a producción.
 
