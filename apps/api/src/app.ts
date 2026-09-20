@@ -16,6 +16,7 @@ import { programsRouter } from "./modules/programs/programs.routes.js";
 import { customersRouter } from "./modules/customers/customers.routes.js";
 import { programRewardsRouter, rewardsRouter } from "./modules/rewards/rewards.routes.js";
 import { portalRouter } from "./modules/portal/portal.routes.js";
+import { appleWebServiceRouter } from "./modules/wallet/apple-web-service.routes.js";
 
 export function createApp() {
   const app = express();
@@ -55,6 +56,8 @@ export function createApp() {
   app.use("/api/programs", programsRouter);
   app.use("/api/rewards", rewardsRouter);
   app.use("/api/portal", portalRouter);
+  // Fuera de /api a proposito: es el `webServiceURL` fijo del protocolo Apple Wallet.
+  app.use("/v1", appleWebServiceRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

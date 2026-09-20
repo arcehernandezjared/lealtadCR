@@ -19,7 +19,8 @@ const envSchema = z.object({
 
   APPLE_TEAM_ID: z.string().optional(),
   APPLE_PASS_TYPE_ID: z.string().optional(),
-  APPLE_CERTIFICATE_BASE64: z.string().optional(),
+  APPLE_SIGNER_CERT_BASE64: z.string().optional(),
+  APPLE_SIGNER_KEY_BASE64: z.string().optional(),
   APPLE_CERTIFICATE_PASSWORD: z.string().optional(),
   APPLE_WWDR_CERTIFICATE_BASE64: z.string().optional(),
   APPLE_APNS_KEY_BASE64: z.string().optional(),
@@ -49,7 +50,8 @@ export const isTest = env.NODE_ENV === "test";
 export const appleWalletConfigured = Boolean(
   env.APPLE_TEAM_ID &&
     env.APPLE_PASS_TYPE_ID &&
-    env.APPLE_CERTIFICATE_BASE64 &&
+    env.APPLE_SIGNER_CERT_BASE64 &&
+    env.APPLE_SIGNER_KEY_BASE64 &&
     env.APPLE_WWDR_CERTIFICATE_BASE64
 );
 

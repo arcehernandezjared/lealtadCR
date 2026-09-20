@@ -1,23 +1,25 @@
-# Apple Wallet — guía de credenciales e integración (Fase 4)
+# Apple Wallet — credenciales e integración (Fase 4)
 
-> **Estado**: no implementado todavía (planeado para la Fase 4, según
-> `docs/ARCHITECTURE.md`). Este documento existe ahora para que puedas ir
-> tramitando las credenciales con Apple, que tardan en aprobarse, mientras
-> se completan las fases anteriores. El código de esta fase **no simulará**
-> una integración real: hasta que exista la implementación, no se afirmará
-> en ningún lugar del producto que "ya funciona con Apple Wallet".
+> **Estado: implementado, pendiente de tus credenciales reales.** El código
+> que genera, firma y sirve los `.pkpass` está completo y probado
+> (`packages/wallet/src/apple`, `apps/api/src/modules/wallet`), incluyendo un
+> test que ejercita la firma PKCS#7 real de punta a punta con certificados
+> de prueba desechables. Lo único que falta para que funcione con un iPhone
+> real son **tus credenciales de Apple Developer** — sin ellas,
+> `appleWalletConfigured` es `false` y la API responde con un error claro
+> (`APPLE_WALLET_NOT_CONFIGURED`) en vez de simular un pass falso.
 
 ## Qué es técnicamente
 
 Apple Wallet usa **PassKit**: un "pass" es un archivo `.pkpass` — un ZIP
 firmado criptográficamente que contiene `pass.json` (los datos), imágenes
-(icon, logo, strip) y `manifest.json` con los hashes de cada archivo, todo
-firmado con una **firma PKCS#7 desprendida** usando el certificado de tu
-Pass Type ID + el certificado intermedio de Apple (WWDR). No es HTML ni un
-PDF: es un formato binario propio que solo Wallet sabe interpretar.
+(icon, logo) y `manifest.json` con los hashes de cada archivo, todo firmado
+con una **firma PKCS#7 desprendida** usando el certificado de tu Pass Type ID
++ el certificado intermedio de Apple (WWDR). No es HTML ni un PDF: es un
+formato binario propio que solo Wallet sabe interpretar.
 
 Para el caso de uso de LoyaltyCr (tarjeta de lealtad), el estilo de pass
-correcto es `storeCard`.
+usado es `storeCard`.
 
 ## Credenciales que necesitas obtener de Apple
 
@@ -37,9 +39,21 @@ correcto es `storeCard`.
    súbelo al portal de Apple Developer para el Pass Type ID creado en el
    paso 2, descarga el certificado resultante, impórtalo en Keychain Access
    junto a su llave privada, y **expórtalo como `.p12`** con un password.
-   → codifica el `.p12` en base64 (`base64 -i Certificates.p12 | tr -d '\n'`)
-   para `APPLE_CERTIFICATE_BASE64`, y el password que le pusiste va en
-   `APPLE_CERTIFICATE_PASSWORD`.
+
+   El `.p12` trae el certificado y la llave privada empaquetados juntos, pero
+   la librería que firma los `.pkpass` (`passkit-generator`) los necesita
+   **por separado y en formato PEM**. Extráelos con OpenSSL:
+   ```bash
+   openssl pkcs12 -in Certificates.p12 -clcerts -nokeys -out signerCert.pem -legacy
+   openssl pkcs12 -in Certificates.p12 -nocerts -out signerKey.pem -legacy
+   ```
+   (`-legacy` puede ser necesario en OpenSSL 3+ para leer el `.p12` que
+   exporta Keychain Access). El primer comando te pide el password del
+   `.p12`; el segundo además te pide definir un password nuevo para
+   `signerKey.pem` — ese es el que va en `APPLE_CERTIFICATE_PASSWORD`.
+
+   → codifica cada PEM en base64 (`base64 -i signerCert.pem | tr -d '\n'`)
+   para `APPLE_SIGNER_CERT_BASE64` y `APPLE_SIGNER_KEY_BASE64` respectivamente.
 
 5. **Certificado WWDR (Apple Worldwide Developer Relations)**: se descarga
    de [apple.com/certificateauthority](https://www.apple.com/certificateauthority/)
@@ -53,50 +67,65 @@ correcto es `storeCard`.
    → `APPLE_APNS_KEY_BASE64` (el `.p8` en base64) y `APPLE_APNS_KEY_ID`.
 
 Todas estas variables ya están declaradas (vacías, documentadas) en
-[`.env.example`](../.env.example). Mientras no estén configuradas,
-`appleWalletConfigured` (`apps/api/src/config/env.ts`) será `false` y el
-backend debe operar en modo mock de desarrollo (nunca afirmando al usuario
-final que el pass es real).
+[`.env.example`](../.env.example). Mientras no estén todas configuradas,
+`appleWalletConfigured` (`apps/api/src/config/env.ts`) es `false` y
+`GET /api/portal/wallet/apple/:programId` responde `400` con
+`error.details.code = "APPLE_WALLET_NOT_CONFIGURED"` — nunca un pass falso.
 
-## Plan de implementación (Fase 4)
+## Cómo está implementado
 
-1. **Generación del `.pkpass`**: construir `pass.json` (storeCard) con los
-   campos del programa de lealtad (puntos, nivel, próxima recompensa),
-   incluir el código de barras/QR del cliente (`Customer.qrCode`), empaquetar
-   con las imágenes del negocio, generar `manifest.json` y firmarlo con
-   PKCS#7 usando el certificado del Pass Type ID + WWDR (librería candidata:
-   `passkit-generator`, que implementa el formato correctamente en vez de
-   reinventar la firma PKCS#7 a mano).
-2. **Persistencia**: cada pass generado crea/actualiza un `WalletPass`
-   (`platform = APPLE`) con su `serialNumber` único y `authToken` (usado por
-   el Wallet Web Service para autenticar al dispositivo).
-3. **Wallet Web Service** (requerido por Apple si quieres que los passes se
-   actualicen solos, no solo al momento de agregarlos): implementar los
-   endpoints que el propio dispositivo llama:
-   - `POST /v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}/{serialNumber}`
-     — el dispositivo se registra para recibir actualizaciones → crea un
-     `WalletDeviceRegistration`.
-   - `DELETE` (mismo path) — el dispositivo se da de baja (usuario quitó el pass).
-   - `GET /v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}?passesUpdatedSince=<tag>`
-     — Apple pregunta qué passes cambiaron.
-   - `GET /v1/passes/{passTypeIdentifier}/{serialNumber}` — devuelve el
-     `.pkpass` actualizado.
-   - `POST /v1/log` — logging de errores que reporta el dispositivo.
-4. **Notificación de cambio**: cuando cambian los puntos/nivel de un cliente,
-   el servidor **no envía el contenido nuevo por push**. Envía una
-   notificación APNs vacía (topic = tu Pass Type ID) a cada
-   `WalletDeviceRegistration.pushToken` del pass — es solo una señal de
-   "algo cambió"; el dispositivo entonces llama al paso 3 (`GET /v1/passes/...`)
-   para bajar el pass actualizado. **Esta es la diferencia clave frente a un
-   push notification tradicional** (sección 15 del brief): la actualización
-   de Wallet es "push-to-pull", no push-con-contenido.
+- **`packages/wallet/src/apple/build-pass-json.ts`** — construye el
+  `pass.json` (storeCard) a partir de los datos del programa/cliente. Función
+  pura, sin I/O, testeada directamente.
+- **`packages/wallet/src/apple/solid-color-png.ts`** — Apple exige al menos
+  `icon.png`; mientras un negocio no suba su propio logo, se genera un PNG
+  real de color sólido (encoder PNG mínimo escrito a mano, sin dependencias)
+  a partir del color de marca del programa.
+- **`packages/wallet/src/apple/generate-pkpass.ts`** — arma el `.pkpass`
+  (pass.json + iconos + manifest + firma PKCS#7) usando `passkit-generator`,
+  que implementa el formato exacto que documenta Apple en vez de reinventar
+  la firma a mano. Probado de punta a punta con un certificado autofirmado
+  desechable (no es un certificado de Apple real, pero valida que el
+  pipeline de firma/empaquetado corre sin errores).
+- **`packages/wallet/src/apple/apns.ts`** — firma el JWT de proveedor de
+  APNs (ES256) y envía el push "silencioso" de actualización via HTTP/2
+  nativo de Node (`node:http2`), sin dependencias de terceros.
+- **`apps/api/src/modules/wallet/wallet.service.ts`** — `issueApplePass()`
+  verifica que el cliente/programa pertenezcan al negocio autenticado
+  *antes* de revisar si Apple Wallet está configurado (para no filtrar el
+  estado de configuración del servidor a alguien probando con IDs ajenos),
+  genera el pass y lo persiste como `WalletPass`.
+- **`apps/api/src/modules/wallet/apple-web-service.{ts,routes.ts}`** — el
+  Wallet Web Service completo, montado en `/v1/...` (fuera de `/api`, porque
+  esa ruta exacta es la que Apple exige en `webServiceURL`):
+  - `POST /v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}/{serialNumber}` — el dispositivo se registra para recibir actualizaciones.
+  - `DELETE` (mismo path) — el dispositivo se da de baja.
+  - `GET /v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}?passesUpdatedSince=<tag>` — Apple pregunta qué passes cambiaron.
+  - `GET /v1/passes/{passTypeIdentifier}/{serialNumber}` — devuelve el `.pkpass` actualizado.
+  - `POST /v1/log` — logging de errores que reporta el dispositivo.
+
+  Se autentican con el `authenticationToken` del propio pass (header
+  `Authorization: ApplePass <token>`), **no** con el JWT de staff/cliente de
+  la API — así lo define el protocolo de Apple. Probado con tests de
+  integración reales (registro, baja, listado de actualizados) que no
+  requieren certificados, porque son pura lógica de base de datos.
+- **Actualización automática**: `apps/api/src/engine/loyalty-ledger.ts`
+  llama a `notifyWalletsOfChange()` después de cada cambio de puntos (fuera
+  de la transacción de DB y sin bloquear la respuesta al cliente). Si el
+  cliente ya tiene un `WalletPass` de Apple, se envía el push APNs
+  "silencioso" a cada dispositivo registrado — el dispositivo entonces
+  vuelve a pedir el pass actualizado (`GET /v1/passes/...`). **Esto es
+  push-to-pull, no un push con contenido** (sección 15 del brief): Wallet no
+  recibe los puntos nuevos directamente por push, solo la señal de "algo
+  cambió".
 
 ## Limitaciones a tener en cuenta
 
 - Apple no permite subir passes de prueba a producción sin firmarlos con
   certificados reales; no hay "modo sandbox" equivalente al de otras APIs de
-  Apple para PassKit — por eso el modo mock de desarrollo debe simular la
-  estructura del `.pkpass` localmente sin intentar registrar dispositivos
-  reales ni enviar APNs.
+  Apple para PassKit.
+- Los pushes de actualización solo llegan a dispositivos que se hayan
+  registrado en el Web Service — eso solo ocurre cuando el usuario agrega el
+  pass a un Wallet real (no se puede simular sin un iPhone).
 - La cuenta de Apple Developer debe renovarse anualmente o los certificados
   dejan de validar passes ya instalados.

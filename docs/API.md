@@ -11,8 +11,8 @@ Autenticación: `Authorization: Bearer <accessToken>` en cada request
 protegida. El refresh token viaja en una cookie `httpOnly` (`loyaltycr_refresh_token`),
 nunca en el body/header — el cliente nunca debe leerlo.
 
-> Este documento cubre los endpoints implementados hasta la Fase 3. Se irá
-> ampliando en cada fase (wallet en Fase 4, notificaciones/campañas en Fase 5, etc.).
+> Este documento cubre los endpoints implementados hasta la Fase 4. Se irá
+> ampliando en cada fase (notificaciones/campañas en Fase 5, etc.).
 
 ## Auth (`/api/auth`)
 
@@ -98,11 +98,28 @@ puede ver el progreso de ese cliente, sin password. Ver
 | GET | `/me` | token de cliente | Perfil + una entrada por cada programa activo del negocio (con progreso hacia el siguiente nivel/recompensa), aunque el cliente todavía no tenga actividad. |
 | GET | `/rewards` | token de cliente | Todas las recompensas activas con su estado para este cliente (`LOCKED`/`READY`/`PENDING`/`REDEEMED`/...). |
 | GET | `/history` | token de cliente | Historial de puntos, visitas y compras (solo lectura). |
+| GET | `/wallet/apple/:programId` | token de cliente | Genera y descarga el `.pkpass` firmado. `400` con `error.details.code = "APPLE_WALLET_NOT_CONFIGURED"` si el negocio no tiene credenciales de Apple configuradas. |
+| GET | `/wallet/google/:programId` | token de cliente | `{ saveUrl }` — enlace "Agregar a Google Wallet". `400` con `error.details.code = "GOOGLE_WALLET_NOT_CONFIGURED"` si no hay credenciales de Google. |
 
 El token de cliente y el de staff se firman con el mismo secreto pero llevan
 un campo `type` (`"staff"` / `"customer"`) que cada middleware exige
 explícitamente — un token de un tipo nunca es aceptado por el middleware del
 otro, aunque la firma sea válida (ver `apps/api/src/lib/jwt.ts`).
+
+## Apple Wallet Web Service (`/v1`) — fuera de `/api`
+
+Protocolo fijo definido por Apple (es el `webServiceURL` que lleva cada
+pass), no autenticado con nuestro JWT sino con el `authenticationToken`
+propio del pass (`Authorization: ApplePass <token>`). Lo llama el propio
+dispositivo del cliente, nunca nuestro frontend. Ver `docs/APPLE_WALLET.md`.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier/:serialNumber` | El dispositivo se registra para recibir actualizaciones (`{ pushToken }`). |
+| DELETE | (mismo path) | El dispositivo se da de baja. |
+| GET | `/devices/:deviceLibraryIdentifier/registrations/:passTypeIdentifier?passesUpdatedSince=` | Lista los `serialNumbers` que cambiaron para ese dispositivo. `204` si no hay ninguno. |
+| GET | `/passes/:passTypeIdentifier/:serialNumber` | Devuelve el `.pkpass` actualizado. |
+| POST | `/log` | Logging de errores que reporta el dispositivo (sin auth). |
 
 ## Admin (`/api/admin`) — requiere `SUPER_ADMIN`
 
@@ -114,7 +131,5 @@ otro, aunque la firma sea válida (ver `apps/api/src/lib/jwt.ts`).
 
 ## Próximos endpoints (planeados por fase)
 
-- **Fase 4**: `POST /api/wallet/apple`, `POST /api/wallet/google`,
-  `GET /v1/passes/:type/:serial` (Apple Wallet Web Service).
 - **Fase 5**: `POST /api/campaigns`, `POST /api/automations`.
 - **Fase 6**: `GET /api/subscriptions`, endpoints de billing.

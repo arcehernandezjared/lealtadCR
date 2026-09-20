@@ -3,27 +3,32 @@
 ## Visión general
 
 LoyaltyCr es un monorepo (pnpm workspaces + Turborepo) con dos aplicaciones y
-dos paquetes compartidos:
+tres paquetes compartidos:
 
 ```
 apps/api      Express + TypeScript. API REST. Toda la lógica de negocio vive aquí.
 apps/web      React + Vite + TypeScript + Tailwind. Landing, auth, dashboard,
-              (en fases futuras: portal del cliente, interfaz de empleado).
+              portal del cliente (móvil, sin login) e interfaz de empleado (POS).
 packages/database  Prisma schema + cliente singleton + extension de aislamiento
                     multi-tenant + seed de datos de desarrollo.
 packages/shared     Tipos, schemas de validación (zod), registro extensible de
                     eventos/acciones del motor de reglas, utilidades de auth
                     (hashing de passwords, tipos de tokens), manejo de errores.
+packages/wallet     Generación/firma de .pkpass (Apple), cliente de la Google
+                    Wallet API, y las piezas de cada protocolo que no dependen
+                    de la base de datos (JWTs, PKCS#7, PNG placeholder, APNs).
 ```
 
-`packages/database` y `packages/shared` no dependen de `apps/*`: son
-librerías internas consumidas por el backend (y, en el caso de `shared`,
-también por el frontend para reutilizar schemas/tipos sin duplicarlos).
+`packages/database`, `packages/shared` y `packages/wallet` no dependen de
+`apps/*`: son librerías internas consumidas por el backend (y, en el caso de
+`shared`, también por el frontend). `packages/wallet` en particular está
+diseñado para no tocar Prisma directamente — solo recibe los datos que ya
+resolvió `apps/api/src/modules/wallet`, para poder testear la generación de
+passes con certificados de prueba sin necesitar una base de datos.
 
-`packages/wallet` y `packages/notifications`, mencionados en el brief
-original como paquetes independientes, se crearán en la Fase 4 y Fase 5
-respectivamente, cuando haya código real que justifique separarlos (evitar
-crear paquetes vacíos de antemano).
+`packages/notifications`, mencionado en el brief original, se creará en la
+Fase 5, cuando haya código real que lo justifique (evitar paquetes vacíos de
+antemano).
 
 ## Multi-tenancy
 
@@ -175,6 +180,47 @@ porque no hay forma de probarlo de punta a punta en este entorno de
 desarrollo (sin camara real disponible), y no queria dejar esa ruta a medio
 probar.
 
+## Apple Wallet y Google Wallet (Fase 4)
+
+Ver `docs/APPLE_WALLET.md` y `docs/GOOGLE_WALLET.md` para el detalle de
+credenciales y protocolo de cada plataforma. Aquí, las decisiones de diseño
+que no son obvias leyendo el código:
+
+- **`packages/wallet` no toca la base de datos.** Recibe datos ya resueltos
+  (`LoyaltyPassData`, `LoyaltyClassData`, etc.) y devuelve buffers/URLs. Esto
+  permite testear la generación real de `.pkpass` (firma PKCS#7 incluida) y
+  del JWT de Google (firma RS256 incluida) con certificados/llaves de prueba
+  generados en el momento del test, sin necesitar Postgres ni credenciales
+  de Apple/Google reales — ver los tests en `packages/wallet/src/apple/*.test.ts`
+  y `packages/wallet/src/google/*.test.ts`.
+- **La verificación de pertenencia al tenant va siempre antes que la
+  verificación de configuración.** `issueApplePass`/`issueGooglePass`
+  (`apps/api/src/modules/wallet/wallet.service.ts`) resuelven primero
+  `getPassContext()` (que falla con 404 si el cliente/programa no son del
+  negocio autenticado) y solo después revisan si hay credenciales reales
+  configuradas. Si el orden fuera al revés, alguien probando con IDs ajenos
+  podría deducir si un negocio cualquiera tiene o no Wallet configurado.
+- **El icono/logo del `.pkpass` se generan on-the-fly** como PNG de color
+  sólido a partir del color de marca del programa
+  (`packages/wallet/src/apple/solid-color-png.ts`, un encoder PNG mínimo
+  sin dependencias) porque Apple exige al menos `icon.png` para que el pass
+  sea válido, y el producto todavía no tiene upload de logos de negocio.
+- **La actualización de wallets es un efecto secundario del ledger, no un
+  paso explícito que cada endpoint tenga que recordar llamar.**
+  `applyLoyaltyDelta()` (`apps/api/src/engine/loyalty-ledger.ts`) llama a
+  `notifyWalletsOfChange()` después de confirmar la transacción — fuera de
+  ella (es I/O de red hacia Apple/Google, no debe alargar el lock de la
+  transacción) y sin esperar su resultado (el cliente que registró la
+  visita no debe esperar a que Apple/Google respondan). La función nunca
+  lanza: un fallo al notificar un wallet no debe tumbar la operación de
+  negocio que lo originó.
+- **Apple vs. Google requieren arquitecturas de actualización distintas, y
+  el código lo refleja en vez de esconder la diferencia:** Apple necesita
+  push-to-pull vía su propio Wallet Web Service + APNs (ver
+  `apple-web-service.ts`); Google se actualiza con un `PATCH` directo a la
+  API REST y el propio Google notifica al dispositivo. No hay una
+  abstracción comun que finja que ambas plataformas funcionan igual.
+
 ## Analytics
 
 Los modelos "indirectos" (sin `businessId` propio) se consultan con el
@@ -191,7 +237,7 @@ no haber una forma portable de agrupar por día con el query builder de Prisma.
    multi-tenancy, negocios/empleados/sucursales, dashboard con analytics básico.
 2. **Fase 2 (completada)**: clientes, puntos, visitas, motor de reglas activo, recompensas, niveles.
 3. **Fase 3 (completada)**: QR por cliente, portal del cliente, interfaz de empleado (POS).
-4. **Fase 4**: Apple Wallet y Google Wallet (ver docs/APPLE_WALLET.md y docs/GOOGLE_WALLET.md).
+4. **Fase 4 (completada, sin credenciales reales aun)**: Apple Wallet y Google Wallet (ver docs/APPLE_WALLET.md y docs/GOOGLE_WALLET.md).
 5. **Fase 5**: notificaciones multicanal, campañas, automatizaciones.
 6. **Fase 6**: analytics avanzado, suscripciones/planes con límites reales, administración global.
 7. **Fase 7**: testing exhaustivo, hardening de seguridad, optimización, deployment a producción.

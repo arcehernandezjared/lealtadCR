@@ -4,12 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Wallet, Gift, Clock } from "lucide-react";
 import { portalFetch, PortalApiError } from "./portal-api";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
+
 interface PortalAccount {
   id: string | null;
   points: number;
   visits: number;
   stamps: number;
-  program: { name: string; primaryColor: string; secondaryColor: string; logoUrl: string | null };
+  program: { id: string; name: string; primaryColor: string; secondaryColor: string; logoUrl: string | null };
   currentTier: { name: string; color: string; minPoints: number } | null;
   nextTier: { name: string; color: string; minPoints: number } | null;
   nextReward: { name: string; pointsCost: number } | null;
@@ -41,6 +43,8 @@ export function CustomerPortalPage() {
   const [token, setToken] = useState<string | null>(null);
   const [businessName, setBusinessName] = useState("");
   const [sessionError, setSessionError] = useState<string | null>(null);
+  const [walletMessage, setWalletMessage] = useState<string | null>(null);
+  const [walletLoading, setWalletLoading] = useState<"apple" | "google" | null>(null);
 
   useEffect(() => {
     if (!qrCode) return;
@@ -72,6 +76,46 @@ export function CustomerPortalPage() {
     queryFn: () => portalFetch<PortalHistory>("/api/portal/history", token),
     enabled: Boolean(token),
   });
+
+  async function handleAddAppleWallet(programId: string) {
+    if (!token) return;
+    setWalletLoading("apple");
+    setWalletMessage(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/portal/wallet/apple/${programId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error?.message ?? "No se pudo generar la tarjeta de Apple Wallet");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "loyaltycr.pkpass";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setWalletMessage(err instanceof Error ? err.message : "No se pudo agregar la tarjeta a Apple Wallet");
+    } finally {
+      setWalletLoading(null);
+    }
+  }
+
+  async function handleAddGoogleWallet(programId: string) {
+    if (!token) return;
+    setWalletLoading("google");
+    setWalletMessage(null);
+    try {
+      const data = await portalFetch<{ saveUrl: string }>(`/api/portal/wallet/google/${programId}`, token);
+      window.location.href = data.saveUrl;
+    } catch (err) {
+      setWalletMessage(err instanceof PortalApiError ? err.message : "No se pudo agregar la tarjeta a Google Wallet");
+    } finally {
+      setWalletLoading(null);
+    }
+  }
 
   if (sessionError) {
     return (
@@ -144,20 +188,23 @@ export function CustomerPortalPage() {
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button
-                disabled
-                title="Disponible proximamente"
-                className="flex items-center justify-center gap-2 rounded-xl border border-ink-200 bg-white py-3 text-sm font-medium text-ink-400"
+                onClick={() => handleAddAppleWallet(account.program.id)}
+                disabled={walletLoading !== null}
+                className="flex items-center justify-center gap-2 rounded-xl border border-ink-200 bg-white py-3 text-sm font-medium text-ink-700 disabled:opacity-60"
               >
-                <Wallet className="h-4 w-4" /> Apple Wallet
+                <Wallet className="h-4 w-4" /> {walletLoading === "apple" ? "Generando..." : "Apple Wallet"}
               </button>
               <button
-                disabled
-                title="Disponible proximamente"
-                className="flex items-center justify-center gap-2 rounded-xl border border-ink-200 bg-white py-3 text-sm font-medium text-ink-400"
+                onClick={() => handleAddGoogleWallet(account.program.id)}
+                disabled={walletLoading !== null}
+                className="flex items-center justify-center gap-2 rounded-xl border border-ink-200 bg-white py-3 text-sm font-medium text-ink-700 disabled:opacity-60"
               >
-                <Wallet className="h-4 w-4" /> Google Wallet
+                <Wallet className="h-4 w-4" /> {walletLoading === "google" ? "Generando..." : "Google Wallet"}
               </button>
             </div>
+            {walletMessage && (
+              <p className="mt-2 text-center text-xs text-ink-500">{walletMessage}</p>
+            )}
 
             <section className="mt-8">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-900">

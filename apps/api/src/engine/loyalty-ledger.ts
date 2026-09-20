@@ -1,5 +1,7 @@
 import { prisma, type Prisma, type TransactionType } from "@loyaltycr/database";
 import { generateRedemptionCode } from "@loyaltycr/shared";
+import { logger } from "../lib/logger.js";
+import { notifyWalletsOfChange } from "../modules/wallet/wallet.service.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -36,7 +38,7 @@ export interface LoyaltyDeltaResult {
  * reevalua el nivel (tier) y se desbloquean recompensas si corresponde.
  */
 export async function applyLoyaltyDelta(delta: LoyaltyDelta): Promise<LoyaltyDeltaResult> {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const account = await tx.loyaltyAccount.upsert({
       where: { customerId_programId: { customerId: delta.customerId, programId: delta.programId } },
       update: {},
@@ -88,6 +90,16 @@ export async function applyLoyaltyDelta(delta: LoyaltyDelta): Promise<LoyaltyDel
 
     return { account: updatedAccount, transaction, tierChanged, unlockedRedemptions };
   });
+
+  // Fuera de la transaccion (es I/O de red a Apple/Google, no debe alargar
+  // el lock de la transaccion) y sin esperar su resultado: el cliente que
+  // registro la visita/compra no debe esperar a que el wallet se actualice
+  // para recibir su respuesta. notifyWalletsOfChange nunca lanza.
+  void notifyWalletsOfChange(delta.customerId, delta.programId).catch((err) =>
+    logger.error({ err }, "notifyWalletsOfChange fallo inesperadamente")
+  );
+
+  return result;
 }
 
 /**

@@ -12,3 +12,5 @@ portalRouter.post("/session", authRateLimit, portalController.createSession);
 portalRouter.get("/me", authenticateCustomer, portalController.getMe);
 portalRouter.get("/rewards", authenticateCustomer, portalController.getRewards);
 portalRouter.get("/history", authenticateCustomer, portalController.getHistory);
+portalRouter.get("/wallet/apple/:programId", authenticateCustomer, portalController.getAppleWalletPass);
+portalRouter.get("/wallet/google/:programId", authenticateCustomer, portalController.getGoogleWalletLink);

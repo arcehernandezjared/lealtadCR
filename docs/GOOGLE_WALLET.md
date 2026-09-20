@@ -1,9 +1,14 @@
-# Google Wallet — guía de credenciales e integración (Fase 4)
+# Google Wallet — credenciales e integración (Fase 4)
 
-> **Estado**: no implementado todavía (planeado para la Fase 4). Este
-> documento existe para que puedas tramitar el acceso con Google mientras se
-> completan las fases anteriores — la aprobación de la cuenta de issuer no es
-> instantánea.
+> **Estado: implementado, pendiente de tus credenciales reales.** El código
+> que crea/actualiza clases y objetos, y genera el enlace "Agregar a Google
+> Wallet", está completo y probado (`packages/wallet/src/google`,
+> `apps/api/src/modules/wallet`) — incluye un test que firma y verifica un
+> JWT real (RS256) con una llave de prueba. Solo falta tu cuenta de Google
+> Wallet Console aprobada; sin ella, `googleWalletConfigured` es `false` y la
+> API responde con un error claro (`GOOGLE_WALLET_NOT_CONFIGURED`) en vez de
+> simular un enlace falso. La aprobación de la cuenta de issuer puede
+> tardar, así que conviene tramitarla con anticipación.
 
 ## Qué es técnicamente
 
@@ -44,29 +49,46 @@ Service Account de Google Cloud, y el "agregar a Wallet" se resuelve con un
 
 Ambas variables ya están declaradas (vacías, documentadas) en
 [`.env.example`](../.env.example). Mientras no estén configuradas,
-`googleWalletConfigured` (`apps/api/src/config/env.ts`) será `false`.
+`googleWalletConfigured` (`apps/api/src/config/env.ts`) es `false` y
+`GET /api/portal/wallet/google/:programId` responde `400` con
+`error.details.code = "GOOGLE_WALLET_NOT_CONFIGURED"`.
 
-## Plan de implementación (Fase 4)
+## Cómo está implementado
 
-1. **Crear la `LoyaltyClass`** al activar Google Wallet para un
-   `LoyaltyProgram`: nombre del negocio, logo, colores, estructura de
-   campos (puntos, nivel, próxima recompensa), tipo de código de barras
-   (`QR_CODE` con el valor de `Customer.qrCode`).
-2. **Crear/actualizar la `LoyaltyObject`** por cliente: se guarda su id en
-   `WalletPass.googleObjectId` (`platform = GOOGLE`).
-3. **Generar el enlace "Agregar a Google Wallet"**: se construye un JWT
-   (firmado con la llave privada de la service account, algoritmo RS256)
-   que referencia la `LoyaltyObject`, y el enlace final es
-   `https://pay.google.com/gp/v/save/<JWT>`. Ese es el link que se comparte
-   por QR o se pone en un botón "Agregar a Google Wallet".
-4. **Actualizaciones**: a diferencia de Apple, **no hace falta implementar
-   un servidor de push propio**: basta con hacer `PATCH` a la
-   `LoyaltyObject` vía la API REST cuando cambian los puntos/nivel del
-   cliente, y Google Wallet se encarga de notificar al dispositivo del
-   usuario automáticamente. Esta es una diferencia arquitectónica real
-   frente a Apple Wallet (que si requiere el Wallet Web Service + APNs
-   descrito en `docs/APPLE_WALLET.md`) y simplifica bastante el lado del
-   servidor para esta plataforma.
+- **`packages/wallet/src/google/build-loyalty-class.ts` /
+  `build-loyalty-object.ts`** — funciones puras que arman los payloads de
+  `LoyaltyClass`/`LoyaltyObject` (nombre del negocio, logo, colores, puntos,
+  nivel, próxima recompensa, código QR). `reviewStatus: "UNDER_REVIEW"` es el
+  valor correcto para una clase nueva — Google debe aprobarla antes de que
+  sea visible en producción para clientes reales.
+- **`packages/wallet/src/google/google-wallet-client.ts`** — cliente
+  autenticado contra `walletobjects.googleapis.com` usando
+  `google-auth-library` (paquete oficial de Google) con el scope
+  `wallet_object.issuer`. Los métodos `upsertLoyaltyClass`/`upsertLoyaltyObject`
+  intentan `POST` (crear) y, si ya existe (409), hacen `PATCH` (actualizar) —
+  la API de Google no tiene un verbo único de "crear o actualizar".
+- **`packages/wallet/src/google/save-link.ts`** — genera el JWT (RS256,
+  firmado con la llave privada de la service account) que arma el enlace
+  `https://pay.google.com/gp/v/save/<JWT>`. Referencia la `LoyaltyObject`
+  **por id**, no la reenvía completa, porque se asume que ya fue
+  creada/actualizada vía la REST API antes de generar el link — así el
+  objeto existe en Google desde el primer momento y se puede seguir
+  actualizando aunque el cliente todavía no le haya dado "Guardar". Probado
+  con una llave RSA generada en el momento del test (verifica que la firma
+  es real y que se rechaza con la llave pública equivocada).
+- **`apps/api/src/modules/wallet/wallet.service.ts`** — `issueGooglePass()`
+  verifica pertenencia al negocio *antes* de revisar si Google Wallet está
+  configurado (mismo motivo que en Apple: no filtrar el estado de
+  configuración del servidor), crea/actualiza la clase y el objeto, y
+  devuelve el `saveUrl` listo para `GET /api/portal/wallet/google/:programId`.
+- **Actualizaciones**: a diferencia de Apple, **no hace falta un servidor de
+  push propio** — `notifyWalletsOfChange()` (llamado desde
+  `apps/api/src/engine/loyalty-ledger.ts` tras cada cambio de puntos) hace
+  `PATCH` directo a la `LoyaltyObject` vía la REST API, y Google Wallet
+  notifica al dispositivo del usuario por su cuenta. Esta es una diferencia
+  arquitectónica real frente a Apple Wallet (que sí requiere el Wallet Web
+  Service + APNs, ver `docs/APPLE_WALLET.md`) y simplifica bastante el lado
+  del servidor para esta plataforma.
 
 ## Limitaciones a tener en cuenta
 
