@@ -1,0 +1,25 @@
+{
+  "name": "loyaltycr",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LoyaltyCr - Plataforma SaaS de fidelizacion digital multi-tenant con Apple Wallet y Google Wallet",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@12.5.1",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "db:generate": "pnpm --filter @loyaltycr/database prisma:generate",
+    "db:migrate": "pnpm --filter @loyaltycr/database prisma:migrate",
+    "db:seed": "pnpm --filter @loyaltycr/database prisma:seed",
+    "db:studio": "pnpm --filter @loyaltycr/database prisma:studio"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

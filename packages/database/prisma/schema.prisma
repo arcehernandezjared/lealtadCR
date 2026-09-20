@@ -1,0 +1,762 @@
+// LoyaltyCr - Prisma schema
+// Convenciones:
+//  - `id`      : identificador interno (cuid), usado para relaciones FK. Nunca se expone en la API.
+//  - `publicId`: UUID publico, es lo unico que se expone en respuestas de API y URLs.
+//  - Los campos de "tipo evento/accion" (LoyaltyRule.eventType, LoyaltyRule.action, Automation.triggerType)
+//    se modelan como String (no enum de Postgres) a proposito: el motor de reglas/automatizaciones
+//    valida estos valores en la capa de aplicacion (packages/shared) contra un registro extensible,
+//    de forma que agregar un nuevo tipo de evento NO requiere una migracion de base de datos.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum GlobalRole {
+  USER
+  SUPER_ADMIN
+}
+
+enum EmployeeRole {
+  OWNER
+  MANAGER
+  EMPLOYEE
+}
+
+enum BusinessStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum ProgramType {
+  POINTS
+  VISITS
+  STAMPS
+  SPEND
+  MIXED
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  BLOCKED
+}
+
+enum TransactionType {
+  EARN
+  REDEEM
+  ADJUST
+  EXPIRE
+}
+
+enum RedemptionStatus {
+  PENDING
+  REDEEMED
+  EXPIRED
+  CANCELLED
+}
+
+enum WalletPlatform {
+  APPLE
+  GOOGLE
+}
+
+enum NotificationChannelType {
+  WALLET_UPDATE
+  WEB_PUSH
+  EMAIL
+  WHATSAPP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+}
+
+enum ReferralStatus {
+  PENDING
+  COMPLETED
+}
+
+// ============================================================================
+// IDENTIDAD / AUTENTICACION
+// ============================================================================
+
+model User {
+  id              String     @id @default(cuid())
+  publicId        String     @unique @default(uuid())
+  email           String     @unique
+  passwordHash    String?
+  firstName       String
+  lastName        String
+  phone           String?
+  globalRole      GlobalRole @default(USER)
+  emailVerifiedAt DateTime?
+  isActive        Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  employeeMemberships   Employee[]
+  customerMemberships   Customer[]
+  refreshTokens         RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens   PasswordResetToken[]
+  auditLogs             AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id                String    @id @default(cuid())
+  userId            String
+  tokenHash         String    @unique
+  userAgent         String?
+  ipAddress         String?
+  expiresAt         DateTime
+  revokedAt         DateTime?
+  replacedByTokenId String?
+  createdAt         DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+// ============================================================================
+// NEGOCIO / MULTI-TENANT
+// ============================================================================
+
+model Business {
+  id         String         @id @default(cuid())
+  publicId   String         @unique @default(uuid())
+  name       String
+  slug       String         @unique
+  legalName  String?
+  email      String
+  phone      String?
+  logoUrl    String?
+  status     BusinessStatus @default(TRIAL)
+  timezone   String         @default("America/Costa_Rica")
+  currency   String         @default("CRC")
+  onboardingStep Int        @default(0)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  branches   Branch[]
+  employees  Employee[]
+  customers  Customer[]
+  programs   LoyaltyProgram[]
+  campaigns  Campaign[]
+  automations Automation[]
+  notifications Notification[]
+  auditLogs  AuditLog[]
+  visits     Visit[]
+  purchases  Purchase[]
+  referrals  Referral[]
+  subscription Subscription?
+
+  @@index([slug])
+  @@map("businesses")
+}
+
+model Branch {
+  id         String   @id @default(cuid())
+  publicId   String   @unique @default(uuid())
+  businessId String
+  name       String
+  address    String?
+  phone      String?
+  isMain     Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business  Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  employees Employee[]
+  visits    Visit[]
+  purchases Purchase[]
+
+  @@index([businessId])
+  @@map("branches")
+}
+
+model Employee {
+  id         String       @id @default(cuid())
+  publicId   String       @unique @default(uuid())
+  businessId String
+  userId     String
+  branchId   String?
+  role       EmployeeRole @default(EMPLOYEE)
+  pinHash    String?
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch   Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  visits              Visit[]
+  purchases           Purchase[]
+  rewardRedemptions   RewardRedemption[]
+  loyaltyTransactions LoyaltyTransaction[]
+  auditLogs           AuditLog[]
+
+  @@unique([businessId, userId])
+  @@index([businessId])
+  @@map("employees")
+}
+
+// ============================================================================
+// CLIENTES
+// ============================================================================
+
+model Customer {
+  id         String         @id @default(cuid())
+  publicId   String         @unique @default(uuid())
+  businessId String
+  userId     String?
+  firstName  String
+  lastName   String
+  email      String?
+  phone      String?
+  birthday   DateTime?
+  qrCode     String         @unique @default(cuid())
+  status     CustomerStatus @default(ACTIVE)
+  totalSpent Decimal        @default(0) @db.Decimal(12, 2)
+  lastVisitAt DateTime?
+  referredByCustomerId String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  business  Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  referredBy Customer? @relation("CustomerReferrals", fields: [referredByCustomerId], references: [id], onDelete: SetNull)
+  referrals  Customer[] @relation("CustomerReferrals")
+
+  loyaltyAccounts   LoyaltyAccount[]
+  visits            Visit[]
+  purchases         Purchase[]
+  redemptions       RewardRedemption[]
+  walletPasses      WalletPass[]
+  notifications     Notification[]
+  referralsAsReferrer Referral[] @relation("ReferrerCustomer")
+  referralsAsReferred Referral[] @relation("ReferredCustomer")
+  automationExecutions AutomationExecution[]
+
+  @@index([businessId])
+  @@index([businessId, email])
+  @@index([qrCode])
+  @@map("customers")
+}
+
+// ============================================================================
+// PROGRAMA DE LEALTAD
+// ============================================================================
+
+model LoyaltyProgram {
+  id              String      @id @default(cuid())
+  publicId        String      @unique @default(uuid())
+  businessId      String
+  name            String
+  description     String?
+  type            ProgramType @default(POINTS)
+  logoUrl         String?
+  heroImageUrl    String?
+  primaryColor    String      @default("#111827")
+  secondaryColor  String      @default("#FFFFFF")
+  currency        String      @default("CRC")
+  isActive        Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  rules    LoyaltyRule[]
+  tiers    LoyaltyTier[]
+  rewards  Reward[]
+  accounts LoyaltyAccount[]
+  walletPasses WalletPass[]
+
+  @@index([businessId])
+  @@map("loyalty_programs")
+}
+
+/// Motor de reglas: eventType/action son String validados en la capa de aplicacion
+/// (ver packages/shared/src/rule-engine) para permitir agregar nuevos tipos sin migrar la DB.
+model LoyaltyRule {
+  id         String   @id @default(cuid())
+  publicId   String   @unique @default(uuid())
+  programId  String
+  name       String
+  eventType  String
+  conditions Json     @default("{}")
+  action     String
+  value      Decimal  @db.Decimal(12, 2)
+  priority   Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  program LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+  @@index([programId, eventType])
+  @@map("loyalty_rules")
+}
+
+model LoyaltyTier {
+  id          String   @id @default(cuid())
+  publicId    String   @unique @default(uuid())
+  programId   String
+  name        String
+  description String?
+  minPoints   Int
+  color       String   @default("#6B7280")
+  benefits    Json     @default("[]")
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  program  LoyaltyProgram   @relation(fields: [programId], references: [id], onDelete: Cascade)
+  accounts LoyaltyAccount[]
+
+  @@index([programId])
+  @@map("loyalty_tiers")
+}
+
+model LoyaltyAccount {
+  id            String   @id @default(cuid())
+  publicId      String   @unique @default(uuid())
+  customerId    String
+  programId     String
+  points        Int      @default(0)
+  visits        Int      @default(0)
+  stamps        Int      @default(0)
+  totalSpent    Decimal  @default(0) @db.Decimal(12, 2)
+  currentTierId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  program     LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  currentTier LoyaltyTier? @relation(fields: [currentTierId], references: [id], onDelete: SetNull)
+
+  transactions LoyaltyTransaction[]
+
+  @@unique([customerId, programId])
+  @@index([programId])
+  @@map("loyalty_accounts")
+}
+
+/// Ledger inmutable: nunca se actualiza ni se borra una transaccion, solo se inserta.
+/// El balance vive en LoyaltyAccount y se recalcula transaccionalmente al insertar.
+model LoyaltyTransaction {
+  id           String          @id @default(cuid())
+  publicId     String          @unique @default(uuid())
+  accountId    String
+  type         TransactionType
+  points       Int
+  balanceAfter Int
+  reason       String
+  eventType    String?
+  sourceType   String
+  sourceId     String?
+  employeeId   String?
+  createdAt    DateTime        @default(now())
+
+  account  LoyaltyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  employee Employee?      @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([accountId, createdAt])
+  @@map("loyalty_transactions")
+}
+
+// ============================================================================
+// RECOMPENSAS
+// ============================================================================
+
+model Reward {
+  id                String   @id @default(cuid())
+  publicId          String   @unique @default(uuid())
+  programId         String
+  name              String
+  description       String?
+  imageUrl          String?
+  pointsCost        Int
+  quantityAvailable Int?
+  limitPerCustomer  Int?
+  startsAt          DateTime?
+  expiresAt         DateTime?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  program     LoyaltyProgram     @relation(fields: [programId], references: [id], onDelete: Cascade)
+  redemptions RewardRedemption[]
+
+  @@index([programId])
+  @@map("rewards")
+}
+
+model RewardRedemption {
+  id                 String           @id @default(cuid())
+  publicId           String           @unique @default(uuid())
+  rewardId           String
+  customerId         String
+  code               String           @unique
+  status             RedemptionStatus @default(PENDING)
+  unlockedAt         DateTime         @default(now())
+  redeemedAt         DateTime?
+  redeemedByEmployeeId String?
+  expiresAt          DateTime?
+  createdAt          DateTime         @default(now())
+
+  reward           Reward    @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  customer         Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  redeemedByEmployee Employee? @relation(fields: [redeemedByEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([rewardId])
+  @@index([code])
+  @@map("reward_redemptions")
+}
+
+// ============================================================================
+// EVENTOS DE ORIGEN (visitas, compras, referidos)
+// ============================================================================
+
+model Visit {
+  id         String   @id @default(cuid())
+  publicId   String   @unique @default(uuid())
+  businessId String
+  branchId   String?
+  customerId String
+  employeeId String?
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([customerId])
+  @@map("visits")
+}
+
+model Purchase {
+  id         String   @id @default(cuid())
+  publicId   String   @unique @default(uuid())
+  businessId String
+  branchId   String?
+  customerId String
+  employeeId String?
+  amount     Decimal  @db.Decimal(12, 2)
+  currency   String   @default("CRC")
+  items      Json     @default("[]")
+  createdAt  DateTime @default(now())
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  branch   Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  employee Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([customerId])
+  @@map("purchases")
+}
+
+model Referral {
+  id                  String         @id @default(cuid())
+  publicId            String         @unique @default(uuid())
+  businessId          String
+  referrerCustomerId  String
+  referredCustomerId  String         @unique
+  status              ReferralStatus @default(PENDING)
+  completedAt         DateTime?
+  createdAt           DateTime       @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  referrer Customer @relation("ReferrerCustomer", fields: [referrerCustomerId], references: [id], onDelete: Cascade)
+  referred Customer @relation("ReferredCustomer", fields: [referredCustomerId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([referrerCustomerId])
+  @@map("referrals")
+}
+
+// ============================================================================
+// WALLET (Apple / Google)
+// ============================================================================
+
+/// Representa una tarjeta emitida para un cliente en una plataforma de wallet especifica.
+/// serialNumber es el identificador que usa Apple/Google para referenciar el pass.
+model WalletPass {
+  id                  String         @id @default(cuid())
+  publicId            String         @unique @default(uuid())
+  customerId          String
+  programId           String
+  platform            WalletPlatform
+  serialNumber        String         @unique
+  authToken           String
+  passTypeIdentifier  String?
+  googleObjectId      String?
+  lastUpdatedAt       DateTime       @default(now())
+  createdAt           DateTime       @default(now())
+
+  customer  Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  program   LoyaltyProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  devices   WalletDeviceRegistration[]
+
+  @@unique([customerId, programId, platform])
+  @@index([customerId])
+  @@map("wallet_passes")
+}
+
+/// Registro de dispositivos Apple que han agregado un pass (requerido por el protocolo
+/// Apple Wallet Web Service para poder enviar push de actualizacion via APNs).
+model WalletDeviceRegistration {
+  id                       String   @id @default(cuid())
+  walletPassId             String
+  deviceLibraryIdentifier  String
+  pushToken                String
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  walletPass WalletPass @relation(fields: [walletPassId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceLibraryIdentifier, walletPassId])
+  @@index([walletPassId])
+  @@map("wallet_device_registrations")
+}
+
+// ============================================================================
+// NOTIFICACIONES / CAMPAÑAS / AUTOMATIZACIONES
+// ============================================================================
+
+model Campaign {
+  id           String         @id @default(cuid())
+  publicId     String         @unique @default(uuid())
+  businessId   String
+  title        String
+  message      String
+  segment      Json           @default("{}")
+  channels     String[]
+  status       CampaignStatus @default(DRAFT)
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  notifications Notification[]
+
+  @@index([businessId])
+  @@map("campaigns")
+}
+
+model Notification {
+  id         String                  @id @default(cuid())
+  publicId   String                  @unique @default(uuid())
+  businessId String
+  customerId String?
+  campaignId String?
+  type       String
+  channel    NotificationChannelType
+  title      String
+  body       String
+  status     NotificationStatus      @default(PENDING)
+  metadata   Json                    @default("{}")
+  sentAt     DateTime?
+  readAt     DateTime?
+  createdAt  DateTime                @default(now())
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  campaign Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([customerId])
+  @@map("notifications")
+}
+
+/// triggerType/conditions/actions son Json/String validados en la capa de aplicacion
+/// para poder agregar nuevos disparadores sin migrar la base de datos.
+model Automation {
+  id          String   @id @default(cuid())
+  publicId    String   @unique @default(uuid())
+  businessId  String
+  name        String
+  triggerType String
+  conditions  Json     @default("{}")
+  actions     Json     @default("[]")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business   Business              @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  executions AutomationExecution[]
+
+  @@index([businessId])
+  @@map("automations")
+}
+
+model AutomationExecution {
+  id           String   @id @default(cuid())
+  publicId     String   @unique @default(uuid())
+  automationId String
+  customerId   String?
+  status       String
+  result       Json     @default("{}")
+  executedAt   DateTime @default(now())
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  customer   Customer?  @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  @@index([automationId])
+  @@map("automation_executions")
+}
+
+// ============================================================================
+// AUDITORIA
+// ============================================================================
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  publicId       String   @unique @default(uuid())
+  businessId     String?
+  actorUserId    String?
+  actorEmployeeId String?
+  action         String
+  entityType     String
+  entityId       String?
+  metadata       Json     @default("{}")
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  business     Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  actorUser    User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorEmployee Employee? @relation(fields: [actorEmployeeId], references: [id], onDelete: SetNull)
+
+  @@index([businessId])
+  @@index([businessId, createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================================================
+// SUSCRIPCIONES / PLANES SaaS
+// ============================================================================
+
+model Plan {
+  id           String   @id @default(cuid())
+  publicId     String   @unique @default(uuid())
+  name         String   @unique
+  priceMonthly Decimal  @db.Decimal(10, 2)
+  currency     String   @default("USD")
+  limits       Json
+  features     Json     @default("[]")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  publicId           String             @unique @default(uuid())
+  businessId         String             @unique
+  planId             String
+  status             SubscriptionStatus @default(TRIALING)
+  currentPeriodStart DateTime           @default(now())
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan     Plan      @relation(fields: [planId], references: [id])
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+model Payment {
+  id               String    @id @default(cuid())
+  publicId         String    @unique @default(uuid())
+  subscriptionId   String
+  amount           Decimal   @db.Decimal(10, 2)
+  currency         String    @default("USD")
+  status           String
+  provider         String
+  providerPaymentId String?
+  paidAt           DateTime?
+  createdAt        DateTime  @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@map("payments")
+}
