@@ -4,13 +4,14 @@ SaaS multi-tenant para programas de fidelización digital: tarjetas de lealtad
 para Apple Wallet y Google Wallet, puntos, recompensas, niveles, automatizaciones
 y analytics para negocios con uno o varios locales.
 
-> **Estado actual: Fase 2 completada.** Arquitectura, base de datos completa,
+> **Estado actual: Fase 3 completada.** Arquitectura, base de datos completa,
 > autenticación, multi-tenancy, dashboard, programas de lealtad, motor de
-> reglas, clientes, visitas/compras, niveles y recompensas (con canje por
-> código) están implementados y probados. QR/portal cliente (Fase 3),
-> Apple/Google Wallet (Fase 4), notificaciones/automatizaciones (Fase 5) y
-> analytics avanzado/suscripciones (Fase 6) siguen el plan de fases descrito
-> en `docs/ARCHITECTURE.md`.
+> reglas, clientes, visitas/compras, niveles, recompensas (con canje por
+> código), QR por cliente, portal del cliente (móvil, sin login) e interfaz
+> de empleado para escanear/operar en segundos están implementados y
+> probados. Apple/Google Wallet (Fase 4), notificaciones/automatizaciones
+> (Fase 5) y analytics avanzado/suscripciones (Fase 6) siguen el plan de
+> fases descrito en `docs/ARCHITECTURE.md`.
 
 ## Stack
 
@@ -74,7 +75,7 @@ Apple Wallet y Google Wallet son opcionales hasta la Fase 4 — ver
 
 ```bash
 pnpm --filter @loyaltycr/shared test   # unitarios (hashing, codigos, roles)
-pnpm --filter @loyaltycr/api test      # integracion (auth, aislamiento multi-tenant, motor de reglas/recompensas)
+pnpm --filter @loyaltycr/api test      # integracion (auth, aislamiento multi-tenant, motor de reglas/recompensas, portal/QR)
 ```
 
 Los tests de API requieren una base de datos de test separada (`apps/api/.env.test`,

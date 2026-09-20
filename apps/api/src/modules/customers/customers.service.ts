@@ -63,6 +63,17 @@ export async function getOwnedCustomerOrThrow(tenantDb: TenantPrismaClient, cust
   return customer;
 }
 
+/**
+ * Resuelve un cliente por su QR (usado por la interfaz de "escanear cliente"
+ * del empleado). `tenantDb` ya garantiza que solo se encuentre un cliente si
+ * pertenece al negocio autenticado, aunque el QR fue emitido por otro negocio.
+ */
+export async function findCustomerByQrCode(tenantDb: TenantPrismaClient, qrCode: string) {
+  const customer = await tenantDb.customer.findFirst({ where: { qrCode } });
+  if (!customer) throw AppError.notFound("Cliente no encontrado para ese codigo");
+  return customer;
+}
+
 export async function updateCustomer(tenantDb: TenantPrismaClient, customerId: string, input: UpdateCustomerInput) {
   await getOwnedCustomerOrThrow(tenantDb, customerId);
   return tenantDb.customer.update({

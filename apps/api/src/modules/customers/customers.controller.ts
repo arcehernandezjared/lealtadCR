@@ -27,6 +27,14 @@ export const getCustomer = asyncHandler(async (req: Request, res: Response) => {
   res.json(profile);
 });
 
+/** Usado por la interfaz de "escanear cliente" del empleado (POS). */
+export const getCustomerByQrCode = asyncHandler(async (req: Request, res: Response) => {
+  requireStaff(req);
+  const customer = await customersService.findCustomerByQrCode(req.tenantDb!, requireParam(req, "qrCode"));
+  const profile = await customersService.getCustomerProfile(req.tenantDb!, customer.id);
+  res.json(profile);
+});
+
 export const updateCustomer = asyncHandler(async (req: Request, res: Response) => {
   requireStaff(req);
   const customer = await customersService.updateCustomer(req.tenantDb!, requireParam(req, "customerId"), req.body);

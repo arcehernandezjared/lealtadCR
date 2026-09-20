@@ -127,6 +127,54 @@ puntos según las `LoyaltyRule` activas del programa, y llama a
 (`POST /api/customers/:id/points`) llaman a `applyLoyaltyDelta` directamente,
 sin pasar por el matching de reglas.
 
+## Portal del cliente y QR (Fase 3)
+
+El `qrCode` de cada `Customer` (un cuid, alta entropía) es tanto el valor
+codificado en el QR físico/digital de la tarjeta como la credencial de
+acceso al portal: **no existe registro/login de cliente**. Quien tiene el
+enlace/QR puede ver el progreso de esa tarjeta — el mismo modelo que usan la
+mayoría de programas de lealtad digitales (la tarjeta física tampoco pedía
+password). Esto es una decisión de producto, no solo tecnica: reduce la
+fricción de "primer uso" a cero.
+
+Flujo:
+
+1. `POST /api/portal/session { qrCode }` (público, rate-limited) resuelve el
+   `Customer` por su QR y emite un `CustomerAccessTokenPayload` (JWT, 12h)
+   distinto del token de staff.
+2. El frontend (`/portal/:qrCode`) pide una sesión nueva en cada carga de
+   página — no persiste el token entre recargas a propósito, porque el QR en
+   la URL ya es suficiente para reobtenerlo, y evita tener que preocuparse
+   por invalidacion/renovacion de tokens de cliente en el cliente.
+3. `GET /api/portal/me|rewards|history` requieren ese token.
+
+**Confusión de tokens entre audiencias**: el token de staff y el de cliente
+se firman con el mismo `JWT_ACCESS_SECRET` (no hay razón operativa para
+tener dos secretos), lo que significa que un JWT de cliente decodifica
+"correctamente" si se verifica con las reglas de staff (incluso sin volver a
+firmarlo). Para que esto no se traduzca en un bypass de autorización sutil,
+ambos payloads llevan un campo `type` (`"staff"` / `"customer"`) que
+`verifyAccessToken`/`verifyCustomerAccessToken` exigen explícitamente,
+haciendo que un token del tipo equivocado falle con 401 aunque la firma sea
+válida (`apps/api/src/lib/jwt.ts`).
+
+**Cliente sin actividad todavía**: `LoyaltyAccount` se crea recién en el
+primer evento de puntos de un cliente (ver pipeline del ledger arriba). El
+portal y la lista de recompensas iteran sobre los **programas activos del
+negocio**, no sobre las `LoyaltyAccount` existentes, y sintetizan un estado
+"0 puntos" para los que todavia no tienen cuenta — de otro modo, un cliente
+recien creado veria su tarjeta vacia en vez de en cero.
+
+**Interfaz de empleado (POS)**: `GET /api/customers/by-qr/:qrCode` (staff,
+tenant-scoped) resuelve el mismo QR para el flujo de mostrador. Acepta tanto
+un QR leido por un lector de codigo de barras USB/Bluetooth (que escribe el
+valor como si fuera un teclado y manda Enter) como el codigo tipeado a mano,
+cubriendo "el empleado puede escanear o introducir el codigo" sin depender
+de acceso a camara del navegador — la Fase 3 no incluye escaneo por camara
+porque no hay forma de probarlo de punta a punta en este entorno de
+desarrollo (sin camara real disponible), y no queria dejar esa ruta a medio
+probar.
+
 ## Analytics
 
 Los modelos "indirectos" (sin `businessId` propio) se consultan con el
@@ -142,7 +190,7 @@ no haber una forma portable de agrupar por día con el query builder de Prisma.
 1. **Fase 1 (completada)**: arquitectura, base de datos completa, auth,
    multi-tenancy, negocios/empleados/sucursales, dashboard con analytics básico.
 2. **Fase 2 (completada)**: clientes, puntos, visitas, motor de reglas activo, recompensas, niveles.
-3. **Fase 3**: QR por cliente, portal del cliente, interfaz de empleado (POS).
+3. **Fase 3 (completada)**: QR por cliente, portal del cliente, interfaz de empleado (POS).
 4. **Fase 4**: Apple Wallet y Google Wallet (ver docs/APPLE_WALLET.md y docs/GOOGLE_WALLET.md).
 5. **Fase 5**: notificaciones multicanal, campañas, automatizaciones.
 6. **Fase 6**: analytics avanzado, suscripciones/planes con límites reales, administración global.

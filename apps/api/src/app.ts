@@ -15,6 +15,7 @@ import { adminRouter } from "./modules/admin/admin.routes.js";
 import { programsRouter } from "./modules/programs/programs.routes.js";
 import { customersRouter } from "./modules/customers/customers.routes.js";
 import { programRewardsRouter, rewardsRouter } from "./modules/rewards/rewards.routes.js";
+import { portalRouter } from "./modules/portal/portal.routes.js";
 
 export function createApp() {
   const app = express();
@@ -53,6 +54,7 @@ export function createApp() {
   app.use("/api/programs/:programId/rewards", programRewardsRouter);
   app.use("/api/programs", programsRouter);
   app.use("/api/rewards", rewardsRouter);
+  app.use("/api/portal", portalRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

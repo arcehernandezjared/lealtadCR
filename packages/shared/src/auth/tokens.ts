@@ -1,5 +1,16 @@
-/** Payload del access token JWT (vida corta, 15 min). Nunca se persiste. */
+/**
+ * Payload del access token JWT (vida corta, 15 min). Nunca se persiste.
+ *
+ * `type: "staff"` existe a proposito, aunque a simple vista sea redundante
+ * con la forma del objeto: los tokens de staff y de cliente
+ * (CustomerAccessTokenPayload) se firman con el mismo secreto, asi que un
+ * JWT de cliente igual "verifica" correctamente si se decodifica con
+ * verifyAccessToken. Sin un campo `type` explicito que cada middleware
+ * revise, un token de cliente podria colarse como payload de staff con
+ * campos undefined en vez de fallar limpiamente. Ver auth.middleware.ts.
+ */
 export interface AccessTokenPayload {
+  type: "staff";
   sub: string; // User.id
   userPublicId: string;
   email: string;

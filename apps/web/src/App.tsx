@@ -12,6 +12,8 @@ import { ProgramsPage } from "./routes/dashboard/programs/ProgramsPage";
 import { ProgramDetailPage } from "./routes/dashboard/programs/ProgramDetailPage";
 import { CustomersPage } from "./routes/dashboard/customers/CustomersPage";
 import { CustomerDetailPage } from "./routes/dashboard/customers/CustomerDetailPage";
+import { PosPage } from "./routes/dashboard/pos/PosPage";
+import { CustomerPortalPage } from "./routes/portal/CustomerPortalPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -25,8 +27,10 @@ export function App() {
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/portal/:qrCode" element={<CustomerPortalPage />} />
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<DashboardHome />} />
+            <Route path="pos" element={<PosPage />} />
             <Route path="programs" element={<ProgramsPage />} />
             <Route path="programs/:programId" element={<ProgramDetailPage />} />
             <Route path="customers" element={<CustomersPage />} />

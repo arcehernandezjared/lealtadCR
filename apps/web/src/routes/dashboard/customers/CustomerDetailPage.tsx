@@ -1,7 +1,8 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Footprints, ShoppingBag, Coins, Gift, Sparkles } from "lucide-react";
+import { ArrowLeft, Footprints, ShoppingBag, Coins, Gift, Sparkles, Copy, Check } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { apiFetch, ApiError } from "../../../lib/api-client";
 import { Card } from "../../../components/ui/Card";
 import { Button } from "../../../components/ui/Button";
@@ -9,7 +10,15 @@ import { Input } from "../../../components/ui/Input";
 import type { LoyaltyProgram } from "../programs/types";
 
 interface CustomerProfile {
-  customer: { id: string; firstName: string; lastName: string; email: string | null; phone: string | null; totalSpent: string };
+  customer: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+    totalSpent: string;
+    qrCode: string;
+  };
   loyaltyAccounts: Array<{
     id: string;
     points: number;
@@ -138,6 +147,8 @@ export function CustomerDetailPage() {
             </div>
           )}
 
+          <PortalQrCard qrCode={profile.customer.qrCode} />
+
           {activeAction && (
             <Card>
               <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
@@ -254,4 +265,38 @@ function summarizeLoyaltyResult(loyalty: any): string {
   if (loyalty.tierChanged) parts.push("nivel actualizado");
   if (loyalty.unlockedRedemptions?.length) parts.push(`${loyalty.unlockedRedemptions.length} recompensa(s) desbloqueada(s)`);
   return parts.join(" · ");
+}
+
+function PortalQrCard({ qrCode }: { qrCode: string }) {
+  const [copied, setCopied] = useState(false);
+  const portalUrl = `${window.location.origin}/portal/${qrCode}`;
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(portalUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard no disponible (ej. contexto no seguro); el enlace igual se muestra en texto.
+    }
+  }
+
+  return (
+    <Card className="flex items-center gap-5">
+      <div className="rounded-xl border border-ink-100 bg-white p-2">
+        <QRCodeSVG value={portalUrl} size={88} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink-900">Tarjeta digital del cliente</p>
+        <p className="mt-1 truncate text-xs text-ink-400">{portalUrl}</p>
+        <p className="mt-1 text-xs text-ink-400">
+          El cliente escanea este QR (o abre el enlace) para ver su progreso desde su telefono.
+        </p>
+      </div>
+      <Button variant="outline" size="sm" className="gap-1.5" onClick={handleCopy}>
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? "Copiado" : "Copiar enlace"}
+      </Button>
+    </Card>
+  );
 }

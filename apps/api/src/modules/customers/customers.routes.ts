@@ -24,6 +24,9 @@ customersRouter.post(
   validate(createCustomerSchema),
   customersController.createCustomer
 );
+// Debe ir antes de "/:customerId" para que "by-qr" no se interprete como un id.
+customersRouter.get("/by-qr/:qrCode", customersController.getCustomerByQrCode);
+
 customersRouter.get("/:customerId", customersController.getCustomer);
 customersRouter.patch(
   "/:customerId",

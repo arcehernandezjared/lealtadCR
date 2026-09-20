@@ -11,8 +11,8 @@ Autenticación: `Authorization: Bearer <accessToken>` en cada request
 protegida. El refresh token viaja en una cookie `httpOnly` (`loyaltycr_refresh_token`),
 nunca en el body/header — el cliente nunca debe leerlo.
 
-> Este documento cubre los endpoints implementados hasta la Fase 2. Se irá
-> ampliando en cada fase (QR/portal cliente en Fase 3, wallet en Fase 4, etc.).
+> Este documento cubre los endpoints implementados hasta la Fase 3. Se irá
+> ampliando en cada fase (wallet en Fase 4, notificaciones/campañas en Fase 5, etc.).
 
 ## Auth (`/api/auth`)
 
@@ -78,11 +78,31 @@ nunca en el body/header — el cliente nunca debe leerlo.
 | POST | `/:customerId/visit` | cualquiera | Registra una visita (`{ programId, branchId?, notes? }`) y dispara el motor de reglas. Rate-limited. |
 | POST | `/:customerId/purchase` | cualquiera | Registra una compra (`{ programId, amount, items? }`) y dispara el motor de reglas. Rate-limited. |
 | POST | `/:customerId/points` | cualquiera | Ajuste manual de puntos (`{ programId, points, reason }`), sin pasar por reglas. Rate-limited. |
+| GET | `/by-qr/:qrCode` | cualquiera | Resuelve un cliente por su QR (usado por la interfaz de "escanear cliente" del empleado). Devuelve el mismo perfil completo que `/:customerId`. |
 
 Las respuestas de `visit`/`purchase`/`points` incluyen `loyalty` (o el resultado
 directo, según el endpoint) con el nuevo balance, si cambió de nivel
 (`tierChanged`) y las recompensas recién desbloqueadas (`unlockedRedemptions`,
 cada una con su código único de canje).
+
+## Portal del cliente (`/api/portal`)
+
+Identidad separada del staff: el `qrCode` del cliente (alta entropía, no
+adivinable) funciona como credencial de posesión — quien tenga el enlace/QR
+puede ver el progreso de ese cliente, sin password. Ver
+`docs/ARCHITECTURE.md` → "Portal del cliente" para el detalle de diseño.
+
+| Método | Ruta | Auth | Descripción |
+|---|---|---|---|
+| POST | `/session` | — (público, rate-limited) | `{ qrCode }` — cambia el QR por un `accessToken` de sesión de cliente (12h). |
+| GET | `/me` | token de cliente | Perfil + una entrada por cada programa activo del negocio (con progreso hacia el siguiente nivel/recompensa), aunque el cliente todavía no tenga actividad. |
+| GET | `/rewards` | token de cliente | Todas las recompensas activas con su estado para este cliente (`LOCKED`/`READY`/`PENDING`/`REDEEMED`/...). |
+| GET | `/history` | token de cliente | Historial de puntos, visitas y compras (solo lectura). |
+
+El token de cliente y el de staff se firman con el mismo secreto pero llevan
+un campo `type` (`"staff"` / `"customer"`) que cada middleware exige
+explícitamente — un token de un tipo nunca es aceptado por el middleware del
+otro, aunque la firma sea válida (ver `apps/api/src/lib/jwt.ts`).
 
 ## Admin (`/api/admin`) — requiere `SUPER_ADMIN`
 
@@ -94,7 +114,6 @@ cada una con su código único de canje).
 
 ## Próximos endpoints (planeados por fase)
 
-- **Fase 3**: `GET /api/customers/:id/qr`, `POST /api/pos/scan`.
 - **Fase 4**: `POST /api/wallet/apple`, `POST /api/wallet/google`,
   `GET /v1/passes/:type/:serial` (Apple Wallet Web Service).
 - **Fase 5**: `POST /api/campaigns`, `POST /api/automations`.

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, Navigate } from "react-router-dom";
-import { LayoutDashboard, Building2, Users, Settings, LogOut, Layers, Contact } from "lucide-react";
+import { LayoutDashboard, Building2, Users, Settings, LogOut, Layers, Contact, ScanLine } from "lucide-react";
 import clsx from "clsx";
 import { useSessionBootstrap, useMe } from "../../lib/use-session";
 import { useAuthStore } from "../../lib/auth-store";
@@ -7,6 +7,7 @@ import { apiFetch } from "../../lib/api-client";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, end: true },
+  { to: "/dashboard/pos", label: "Escanear cliente", icon: ScanLine },
   { to: "/dashboard/programs", label: "Programas", icon: Layers },
   { to: "/dashboard/customers", label: "Clientes", icon: Contact },
   { to: "/dashboard/branches", label: "Sucursales", icon: Building2 },
