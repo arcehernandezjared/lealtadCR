@@ -12,6 +12,9 @@ import { authRouter } from "./modules/auth/auth.routes.js";
 import { businessRouter } from "./modules/business/business.routes.js";
 import { analyticsRouter } from "./modules/analytics/analytics.routes.js";
 import { adminRouter } from "./modules/admin/admin.routes.js";
+import { programsRouter } from "./modules/programs/programs.routes.js";
+import { customersRouter } from "./modules/customers/customers.routes.js";
+import { programRewardsRouter, rewardsRouter } from "./modules/rewards/rewards.routes.js";
 
 export function createApp() {
   const app = express();
@@ -46,6 +49,10 @@ export function createApp() {
   app.use("/api/business", businessRouter);
   app.use("/api/analytics", analyticsRouter);
   app.use("/api/admin", adminRouter);
+  app.use("/api/customers", customersRouter);
+  app.use("/api/programs/:programId/rewards", programRewardsRouter);
+  app.use("/api/programs", programsRouter);
+  app.use("/api/rewards", rewardsRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

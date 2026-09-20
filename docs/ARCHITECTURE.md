@@ -97,13 +97,35 @@ de Postgres, a propósito: el conjunto de eventos/acciones soportado vive en
 `packages/shared/src/rule-engine/registry.ts` (`LOYALTY_EVENTS`,
 `LOYALTY_ACTIONS`) y se valida en la capa de aplicación con zod. Agregar un
 evento nuevo (ej. `no_show`) es agregar una entrada al registro + su handler
-en el motor de evaluación del backend (Fase 2) — **sin migración de base de
-datos**. El mismo registro se reutiliza en el frontend para renderizar el
-formulario de creación de reglas con el schema de condiciones correcto según
-el evento elegido.
+en `apps/api/src/engine/rule-engine.ts` — **sin migración de base de datos**.
+El mismo registro se reutiliza en el frontend
+(`apps/web/src/routes/dashboard/programs/RulesSection.tsx`) para renderizar
+el formulario de creación de reglas con las opciones de evento/acción
+correctas.
 
 El mismo patrón aplica a `Automation.triggerType`
-(`packages/shared/src/rule-engine/automation-triggers.ts`).
+(`packages/shared/src/rule-engine/automation-triggers.ts`), a implementar en
+la Fase 5.
+
+### Pipeline de escritura del ledger (Fase 2)
+
+Todo cambio de puntos —venga de una regla automática o de un ajuste manual—
+pasa por un único punto de escritura: `applyLoyaltyDelta()` en
+`apps/api/src/engine/loyalty-ledger.ts`. Dentro de una sola transacción de
+Postgres:
+
+1. Se hace `upsert` de la `LoyaltyAccount` (se crea en el primer evento del cliente en ese programa).
+2. Se inserta la entrada del ledger (`LoyaltyTransaction`, append-only) solo si hay cambio de puntos.
+3. Se recalculan `points`/`visits`/`stamps`/`totalSpent`.
+4. Se reevalúa el nivel (`LoyaltyTier` con `minPoints` más alto que no supere el nuevo balance).
+5. Se revisan las recompensas activas del programa y se desbloquean (`RewardRedemption` en `PENDING` con código único) las que el cliente ya puede reclamar, respetando `limitPerCustomer` y `quantityAvailable`.
+
+`apps/api/src/engine/rule-engine.ts` (`triggerLoyaltyEvent`) es la capa que
+traduce un evento de negocio (visita, compra, cumpleaños...) en un delta de
+puntos según las `LoyaltyRule` activas del programa, y llama a
+`applyLoyaltyDelta`. Los ajustes manuales de un OWNER/MANAGER
+(`POST /api/customers/:id/points`) llaman a `applyLoyaltyDelta` directamente,
+sin pasar por el matching de reglas.
 
 ## Analytics
 
@@ -119,7 +141,7 @@ no haber una forma portable de agrupar por día con el query builder de Prisma.
 
 1. **Fase 1 (completada)**: arquitectura, base de datos completa, auth,
    multi-tenancy, negocios/empleados/sucursales, dashboard con analytics básico.
-2. **Fase 2**: clientes, puntos, visitas, motor de reglas activo, recompensas, niveles.
+2. **Fase 2 (completada)**: clientes, puntos, visitas, motor de reglas activo, recompensas, niveles.
 3. **Fase 3**: QR por cliente, portal del cliente, interfaz de empleado (POS).
 4. **Fase 4**: Apple Wallet y Google Wallet (ver docs/APPLE_WALLET.md y docs/GOOGLE_WALLET.md).
 5. **Fase 5**: notificaciones multicanal, campañas, automatizaciones.

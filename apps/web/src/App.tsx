@@ -8,6 +8,10 @@ import { DashboardHome } from "./routes/dashboard/DashboardHome";
 import { BranchesPage } from "./routes/dashboard/BranchesPage";
 import { TeamPage } from "./routes/dashboard/TeamPage";
 import { SettingsPage } from "./routes/dashboard/SettingsPage";
+import { ProgramsPage } from "./routes/dashboard/programs/ProgramsPage";
+import { ProgramDetailPage } from "./routes/dashboard/programs/ProgramDetailPage";
+import { CustomersPage } from "./routes/dashboard/customers/CustomersPage";
+import { CustomerDetailPage } from "./routes/dashboard/customers/CustomerDetailPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -23,6 +27,10 @@ export function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<DashboardHome />} />
+            <Route path="programs" element={<ProgramsPage />} />
+            <Route path="programs/:programId" element={<ProgramDetailPage />} />
+            <Route path="customers" element={<CustomersPage />} />
+            <Route path="customers/:customerId" element={<CustomerDetailPage />} />
             <Route path="branches" element={<BranchesPage />} />
             <Route path="team" element={<TeamPage />} />
             <Route path="settings" element={<SettingsPage />} />

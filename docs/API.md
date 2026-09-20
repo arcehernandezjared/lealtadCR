@@ -11,9 +11,8 @@ Autenticación: `Authorization: Bearer <accessToken>` en cada request
 protegida. El refresh token viaja en una cookie `httpOnly` (`loyaltycr_refresh_token`),
 nunca en el body/header — el cliente nunca debe leerlo.
 
-> Este documento cubre los endpoints implementados hasta la Fase 1. Se irá
-> ampliando en cada fase (clientes/puntos/recompensas en Fase 2, wallet en
-> Fase 4, etc.).
+> Este documento cubre los endpoints implementados hasta la Fase 2. Se irá
+> ampliando en cada fase (QR/portal cliente en Fase 3, wallet en Fase 4, etc.).
 
 ## Auth (`/api/auth`)
 
@@ -46,6 +45,45 @@ nunca en el body/header — el cliente nunca debe leerlo.
 | GET | `/overview?range=today\|7d\|30d\|90d\|custom&from&to` | Estadísticas agregadas del dashboard (clientes, visitas, puntos, recompensas, tasa de retorno, actividad reciente). |
 | GET | `/series?range=...` | Series diarias para los gráficos (clientes nuevos, visitas, puntos otorgados, recompensas canjeadas). |
 
+## Programas (`/api/programs`) — requiere staff autenticado
+
+| Método | Ruta | Rol mínimo | Descripción |
+|---|---|---|---|
+| GET | `/` | cualquiera | Lista los programas del negocio, con reglas/niveles/recompensas incluidos. |
+| POST | `/` | OWNER | Crea un programa. |
+| GET | `/:programId` | cualquiera | Detalle de un programa. |
+| PATCH | `/:programId` | OWNER | Actualiza un programa. |
+| POST | `/:programId/rules` | OWNER | Crea una regla (`eventType`/`action` validados contra `packages/shared/src/rule-engine/registry.ts`). |
+| PATCH/DELETE | `/:programId/rules/:ruleId` | OWNER | Actualiza/elimina una regla. |
+| POST | `/:programId/tiers` | OWNER | Crea un nivel (`minPoints`, color, beneficios). |
+| DELETE | `/:programId/tiers/:tierId` | OWNER | Elimina un nivel. |
+| GET | `/:programId/rewards` | cualquiera | Lista las recompensas del programa. |
+| POST | `/:programId/rewards` | OWNER | Crea una recompensa. |
+| PATCH/DELETE | `/:programId/rewards/:rewardId` | OWNER | Actualiza/elimina una recompensa. |
+
+## Recompensas (`/api/rewards`) — requiere staff autenticado
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/redeem` | `{ code }` — canjea un código de recompensa (`LOYAL-XXXXXX`). Rate-limited (prevención de fraude). |
+
+## Clientes (`/api/customers`) — requiere staff autenticado
+
+| Método | Ruta | Rol mínimo | Descripción |
+|---|---|---|---|
+| GET | `/?search&status&page&pageSize` | cualquiera | Lista clientes con búsqueda y paginación. |
+| POST | `/` | MANAGER | Crea un cliente. |
+| GET | `/:customerId` | cualquiera | Perfil completo: cuentas de lealtad, visitas, compras, recompensas, historial de puntos. |
+| PATCH | `/:customerId` | MANAGER | Actualiza datos del cliente. |
+| POST | `/:customerId/visit` | cualquiera | Registra una visita (`{ programId, branchId?, notes? }`) y dispara el motor de reglas. Rate-limited. |
+| POST | `/:customerId/purchase` | cualquiera | Registra una compra (`{ programId, amount, items? }`) y dispara el motor de reglas. Rate-limited. |
+| POST | `/:customerId/points` | cualquiera | Ajuste manual de puntos (`{ programId, points, reason }`), sin pasar por reglas. Rate-limited. |
+
+Las respuestas de `visit`/`purchase`/`points` incluyen `loyalty` (o el resultado
+directo, según el endpoint) con el nuevo balance, si cambió de nivel
+(`tierChanged`) y las recompensas recién desbloqueadas (`unlockedRedemptions`,
+cada una con su código único de canje).
+
 ## Admin (`/api/admin`) — requiere `SUPER_ADMIN`
 
 | Método | Ruta | Descripción |
@@ -56,10 +94,6 @@ nunca en el body/header — el cliente nunca debe leerlo.
 
 ## Próximos endpoints (planeados por fase)
 
-- **Fase 2**: `GET/POST /api/customers`, `POST /api/customers/:id/points`,
-  `POST /api/customers/:id/visit`, `GET/POST /api/programs`,
-  `POST /api/programs/:id/rules`, `GET/POST /api/rewards`,
-  `POST /api/rewards/:id/redeem`.
 - **Fase 3**: `GET /api/customers/:id/qr`, `POST /api/pos/scan`.
 - **Fase 4**: `POST /api/wallet/apple`, `POST /api/wallet/google`,
   `GET /v1/passes/:type/:serial` (Apple Wallet Web Service).
