@@ -7,6 +7,7 @@ import {
   type UpdateRuleInput,
   type CreateTierInput,
 } from "@loyaltycr/shared";
+import { assertWithinPlanLimit } from "../subscriptions/plan-limits.js";
 
 const PROGRAM_INCLUDE = {
   rules: { orderBy: { priority: "desc" as const } },
@@ -19,6 +20,7 @@ export async function listPrograms(tenantDb: TenantPrismaClient) {
 }
 
 export async function createProgram(tenantDb: TenantPrismaClient, businessId: string, input: CreateProgramInput) {
+  await assertWithinPlanLimit(businessId, "programs");
   return tenantDb.loyaltyProgram.create({ data: { ...input, businessId }, include: PROGRAM_INCLUDE });
 }
 

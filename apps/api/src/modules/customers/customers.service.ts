@@ -12,6 +12,7 @@ import { getOwnedProgramOrThrow } from "../programs/programs.service.js";
 import { triggerLoyaltyEvent } from "../../engine/rule-engine.js";
 import { applyLoyaltyDelta } from "../../engine/loyalty-ledger.js";
 import { recordAuditLog } from "../../lib/audit.js";
+import { assertWithinPlanLimit } from "../subscriptions/plan-limits.js";
 
 export async function listCustomers(tenantDb: TenantPrismaClient, query: CustomerListQuery) {
   const where = {
@@ -43,6 +44,7 @@ export async function listCustomers(tenantDb: TenantPrismaClient, query: Custome
 }
 
 export async function createCustomer(tenantDb: TenantPrismaClient, businessId: string, input: CreateCustomerInput) {
+  await assertWithinPlanLimit(businessId, "customers");
   return tenantDb.customer.create({
     data: {
       businessId,

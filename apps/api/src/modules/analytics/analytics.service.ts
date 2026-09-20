@@ -142,3 +142,57 @@ export async function getDashboardSeries(businessId: string, range: DateRange) {
     rewardsRedeemed: redemptions.map((r) => ({ date: r.day, value: Number(r.count) })),
   };
 }
+
+/**
+ * Recompensas mas canjeadas y desempeno de notificaciones en el periodo —
+ * el analytics "avanzado" de la Fase 6, complementario al overview basico
+ * de la Fase 1.
+ */
+export async function getAdvancedAnalytics(businessId: string, range: DateRange) {
+  const [topRewards, notificationsByChannel, branchVisits] = await Promise.all([
+    prisma.rewardRedemption.groupBy({
+      by: ["rewardId"],
+      where: { status: "REDEEMED", redeemedAt: { gte: range.from, lte: range.to }, reward: { program: { businessId } } },
+      _count: { rewardId: true },
+      orderBy: { _count: { rewardId: "desc" } },
+      take: 5,
+    }),
+    prisma.notification.groupBy({
+      by: ["channel", "status"],
+      where: { businessId, createdAt: { gte: range.from, lte: range.to } },
+      _count: { channel: true },
+    }),
+    prisma.$queryRaw<Array<{ branchName: string | null; count: bigint }>>(Prisma.sql`
+      SELECT b.name AS "branchName", COUNT(*)::bigint AS count
+      FROM "visits" v
+      LEFT JOIN "branches" b ON b.id = v."branchId"
+      WHERE v."businessId" = ${businessId} AND v."createdAt" BETWEEN ${range.from} AND ${range.to}
+      GROUP BY b.name ORDER BY count DESC
+    `),
+  ]);
+
+  const rewardIds = topRewards.map((r) => r.rewardId);
+  const rewards = rewardIds.length
+    ? await prisma.reward.findMany({ where: { id: { in: rewardIds } }, select: { id: true, name: true } })
+    : [];
+  const rewardNameById = new Map(rewards.map((r) => [r.id, r.name]));
+
+  const notificationStats: Record<string, { sent: number; failed: number; pending: number }> = {};
+  for (const row of notificationsByChannel) {
+    const key = row.channel;
+    notificationStats[key] ??= { sent: 0, failed: 0, pending: 0 };
+    if (row.status === "SENT") notificationStats[key]!.sent += row._count.channel;
+    else if (row.status === "FAILED") notificationStats[key]!.failed += row._count.channel;
+    else notificationStats[key]!.pending += row._count.channel;
+  }
+
+  return {
+    topRewards: topRewards.map((r) => ({
+      rewardId: r.rewardId,
+      name: rewardNameById.get(r.rewardId) ?? "Recompensa eliminada",
+      redemptions: r._count.rewardId,
+    })),
+    notificationStats,
+    branchVisits: branchVisits.map((b) => ({ branchName: b.branchName ?? "Sin sucursal", visits: Number(b.count) })),
+  };
+}

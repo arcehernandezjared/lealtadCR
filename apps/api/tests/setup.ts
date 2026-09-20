@@ -1,16 +1,28 @@
 import { beforeAll, afterAll, afterEach } from "vitest";
 import { prisma } from "@loyaltycr/database";
 
+// Debe coincidir con packages/database/prisma/seed.ts (STARTER real).
+const STARTER_LIMITS = {
+  maxCustomers: 300,
+  maxBranches: 2,
+  maxEmployees: 3,
+  maxPrograms: 1,
+  maxCampaignsPerMonth: 2,
+  maxAutomations: 1,
+};
+
 beforeAll(async () => {
-  // Asegura que el plan STARTER exista (requerido por el flujo de registro).
+  // Asegura que el plan STARTER exista con limites conocidos (requerido por
+  // el flujo de registro y por los tests de limites de plan). `update` se
+  // usa para que corridas anteriores de test no dejen limites desactualizados.
   await prisma.plan.upsert({
     where: { name: "STARTER" },
-    update: {},
+    update: { limits: STARTER_LIMITS },
     create: {
       name: "STARTER",
       priceMonthly: 19,
       currency: "USD",
-      limits: { maxCustomers: 300, maxBranches: 1, maxEmployees: 3 },
+      limits: STARTER_LIMITS,
       features: [],
     },
   });

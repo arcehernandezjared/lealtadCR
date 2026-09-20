@@ -17,3 +17,10 @@ export const getSeries = asyncHandler(async (req: Request, res: Response) => {
   const series = await analyticsService.getDashboardSeries(req.auth.employee.businessId, range);
   res.json({ range, series });
 });
+
+export const getAdvanced = asyncHandler(async (req: Request, res: Response) => {
+  if (req.auth?.kind !== "staff") throw AppError.forbidden();
+  const range = resolveDateRange(req.query as Record<string, unknown>);
+  const advanced = await analyticsService.getAdvancedAnalytics(req.auth.employee.businessId, range);
+  res.json({ range, ...advanced });
+});

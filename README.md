@@ -4,21 +4,26 @@ SaaS multi-tenant para programas de fidelización digital: tarjetas de lealtad
 para Apple Wallet y Google Wallet, puntos, recompensas, niveles, automatizaciones
 y analytics para negocios con uno o varios locales.
 
-> **Estado actual: Fase 5 completada.** Arquitectura, base de datos completa,
-> autenticación, multi-tenancy, dashboard, programas de lealtad, motor de
-> reglas, clientes, visitas/compras, niveles, recompensas (con canje por
-> código), QR por cliente, portal del cliente (móvil, sin login), interfaz
-> de empleado, Apple Wallet/Google Wallet, notificaciones multicanal
-> (EMAIL, WEB_PUSH real, WALLET_UPDATE — WHATSAPP queda como canal
-> preparado sin credenciales), campañas segmentadas y automatizaciones
-> (por evento y programadas) están implementados y probados.
+> **Estado actual: las 6 fases del plan original están completas.**
+> Arquitectura, base de datos, autenticación, multi-tenancy, dashboard,
+> programas de lealtad, motor de reglas, clientes, visitas/compras, niveles,
+> recompensas (con canje por código), QR por cliente, portal del cliente
+> (móvil, sin login), interfaz de empleado, Apple Wallet/Google Wallet,
+> notificaciones multicanal (EMAIL, WEB_PUSH real, WALLET_UPDATE — WHATSAPP
+> queda como canal preparado sin credenciales), campañas segmentadas,
+> automatizaciones (por evento y programadas), límites de plan aplicados de
+> verdad, panel de super admin y analytics avanzado están implementados y
+> probados.
+>
 > **Apple/Google Wallet están completos en código pero necesitan tus
 > credenciales reales para emitir passes de verdad** — ver
 > [docs/APPLE_WALLET.md](docs/APPLE_WALLET.md) y
 > [docs/GOOGLE_WALLET.md](docs/GOOGLE_WALLET.md). Web Push, en cambio, ya
 > funciona de verdad en este repo (llaves VAPID autogeneradas, sin cuenta
-> externa que tramitar). Analytics avanzado/suscripciones (Fase 6) sigue el
-> plan de fases descrito en `docs/ARCHITECTURE.md`.
+> externa que tramitar). Lo que queda fuera de alcance por diseño: billing
+> real (Stripe/SINPE), el canal WhatsApp, y testing/hardening/deployment de
+> producción exhaustivos (Fase 7 del brief original) — ver
+> `docs/ARCHITECTURE.md` para el detalle de cada decisión.
 
 ## Stack
 
@@ -70,7 +75,9 @@ pnpm db:seed
 pnpm dev
 ```
 
-Usuario de prueba tras el seed: `owner@barberiaxyz.test` / `Demo1234!`.
+Usuarios de prueba tras el seed:
+- Dueño de negocio: `owner@barberiaxyz.test` / `Demo1234!`
+- Super admin de la plataforma (`/admin`): `admin@loyaltycr.test` / `SuperAdmin1234!`
 
 ## Variables de entorno
 

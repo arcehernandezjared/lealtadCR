@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Users, UserCheck, Footprints, Coins, Gift, TrendingUp } from "lucide-react";
+import { Users, UserCheck, Footprints, Coins, Gift, TrendingUp, Trophy, Send, Building2 } from "lucide-react";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -52,6 +52,12 @@ interface SeriesResponse {
   };
 }
 
+interface AdvancedResponse {
+  topRewards: Array<{ rewardId: string; name: string; redemptions: number }>;
+  notificationStats: Record<string, { sent: number; failed: number; pending: number }>;
+  branchVisits: Array<{ branchName: string; visits: number }>;
+}
+
 function formatDay(iso: string) {
   return new Date(iso).toLocaleDateString("es-CR", { day: "2-digit", month: "short" });
 }
@@ -69,7 +75,13 @@ export function DashboardHome() {
     queryFn: () => apiFetch<SeriesResponse>(`/api/analytics/series?range=${range}`),
   });
 
+  const advancedQuery = useQuery({
+    queryKey: ["analytics-advanced", range],
+    queryFn: () => apiFetch<AdvancedResponse>(`/api/analytics/advanced?range=${range}`),
+  });
+
   const overview = overviewQuery.data;
+  const advanced = advancedQuery.data;
   const visitsSeries = seriesQuery.data?.series.visits.map((p) => ({ ...p, date: formatDay(p.date) })) ?? [];
 
   return (
@@ -149,6 +161,61 @@ export function DashboardHome() {
           </ResponsiveContainer>
         </div>
       </Card>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card>
+          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-ink-700">
+            <Trophy className="h-4 w-4" /> Recompensas más canjeadas
+          </h3>
+          <ul className="flex flex-col gap-2.5">
+            {advanced?.topRewards.map((r, i) => (
+              <li key={r.rewardId} className="flex items-center justify-between text-sm">
+                <span className="text-ink-700">
+                  {i + 1}. {r.name}
+                </span>
+                <span className="font-medium text-ink-900">{r.redemptions}</span>
+              </li>
+            ))}
+            {advanced?.topRewards.length === 0 && <p className="text-sm text-ink-400">Sin canjes en el periodo.</p>}
+          </ul>
+        </Card>
+
+        <Card>
+          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-ink-700">
+            <Send className="h-4 w-4" /> Notificaciones por canal
+          </h3>
+          <ul className="flex flex-col gap-2.5">
+            {advanced &&
+              Object.entries(advanced.notificationStats).map(([channel, stats]) => (
+                <li key={channel} className="flex items-center justify-between text-sm">
+                  <span className="text-ink-700">{channel}</span>
+                  <span className="text-xs text-ink-500">
+                    <span className="text-green-600">{stats.sent} enviadas</span>
+                    {stats.failed > 0 && <span className="ml-2 text-red-600">{stats.failed} fallidas</span>}
+                  </span>
+                </li>
+              ))}
+            {advanced && Object.keys(advanced.notificationStats).length === 0 && (
+              <p className="text-sm text-ink-400">Sin notificaciones en el periodo.</p>
+            )}
+          </ul>
+        </Card>
+
+        <Card>
+          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-ink-700">
+            <Building2 className="h-4 w-4" /> Visitas por sucursal
+          </h3>
+          <ul className="flex flex-col gap-2.5">
+            {advanced?.branchVisits.map((b) => (
+              <li key={b.branchName} className="flex items-center justify-between text-sm">
+                <span className="text-ink-700">{b.branchName}</span>
+                <span className="font-medium text-ink-900">{b.visits}</span>
+              </li>
+            ))}
+            {advanced?.branchVisits.length === 0 && <p className="text-sm text-ink-400">Sin visitas en el periodo.</p>}
+          </ul>
+        </Card>
+      </div>
 
       <Card>
         <h3 className="mb-4 text-sm font-semibold text-ink-700">Actividad reciente</h3>

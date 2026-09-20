@@ -1,5 +1,6 @@
 import { prisma, type TenantPrismaClient } from "@loyaltycr/database";
 import { AppError } from "@loyaltycr/shared";
+import { assertWithinPlanLimit } from "../subscriptions/plan-limits.js";
 
 export async function listAutomations(tenantDb: TenantPrismaClient) {
   return tenantDb.automation.findMany({ orderBy: { createdAt: "desc" } });
@@ -14,6 +15,7 @@ export interface CreateAutomationInput {
 }
 
 export async function createAutomation(tenantDb: TenantPrismaClient, businessId: string, input: CreateAutomationInput) {
+  await assertWithinPlanLimit(businessId, "automations");
   return tenantDb.automation.create({
     data: {
       businessId,

@@ -31,6 +31,9 @@ export class AppError extends Error {
   static conflict(message: string, details?: unknown) {
     return new AppError(message, 409, "CONFLICT", details);
   }
+  static limitReached(message: string, details?: unknown) {
+    return new AppError(message, 402, "PLAN_LIMIT_REACHED", details);
+  }
   static tooManyRequests(message = "Demasiadas solicitudes") {
     return new AppError(message, 429, "TOO_MANY_REQUESTS");
   }

@@ -38,6 +38,10 @@ export function DashboardLayout() {
     return <Navigate to="/login" replace />;
   }
 
+  if (meQuery.data?.kind === "super_admin") {
+    return <Navigate to="/admin" replace />;
+  }
+
   async function handleLogout() {
     await apiFetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     clear();

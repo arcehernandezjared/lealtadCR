@@ -10,6 +10,7 @@ export const businessRouter = Router();
 businessRouter.use(authenticateStaff);
 
 businessRouter.get("/me", businessController.getMe);
+businessRouter.get("/usage", businessController.getUsage);
 businessRouter.patch("/", requireEmployeeRole("OWNER"), validate(updateBusinessSchema), businessController.updateBusiness);
 
 businessRouter.get("/branches", businessController.listBranches);

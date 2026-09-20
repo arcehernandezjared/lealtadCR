@@ -71,3 +71,9 @@ export const inviteEmployee = asyncHandler(async (req: Request, res: Response) =
   const employee = await businessService.inviteEmployee(req.tenantDb!, auth.employee.businessId, business.name, req.body);
   res.status(201).json(employee);
 });
+
+export const getUsage = asyncHandler(async (req: Request, res: Response) => {
+  const auth = requireStaff(req);
+  const usage = await businessService.getPlanUsage(auth.employee.businessId);
+  res.json(usage);
+});

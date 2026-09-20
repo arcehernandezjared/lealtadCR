@@ -4,6 +4,7 @@ import { generateOpaqueToken, hashToken } from "../../lib/crypto.js";
 import { env } from "../../config/env.js";
 import { sendEmail } from "../../lib/email.js";
 import { recordAuditLog } from "../../lib/audit.js";
+import { assertWithinPlanLimit, getPlanUsage } from "../subscriptions/plan-limits.js";
 
 export async function getBusinessOverview(businessId: string) {
   const business = await prisma.business.findUniqueOrThrow({
@@ -25,11 +26,14 @@ export async function listBranches(tenantDb: TenantPrismaClient) {
 }
 
 export async function createBranch(tenantDb: TenantPrismaClient, businessId: string, input: CreateBranchInput) {
+  await assertWithinPlanLimit(businessId, "branches");
   // `businessId` se pasa explicitamente para satisfacer el tipo de Prisma;
   // el extension de tenant en packages/database/src/tenant.ts lo sobrescribe
   // igualmente en runtime, asi que es imposible crear la sucursal bajo otro negocio.
   return tenantDb.branch.create({ data: { ...input, businessId } });
 }
+
+export { getPlanUsage };
 
 export async function listEmployees(tenantDb: TenantPrismaClient) {
   return tenantDb.employee.findMany({
@@ -44,6 +48,8 @@ export async function inviteEmployee(
   businessName: string,
   input: InviteEmployeeInput
 ) {
+  await assertWithinPlanLimit(businessId, "employees");
+
   let user = await prisma.user.findUnique({ where: { email: input.email } });
   let isNewUser = false;
 

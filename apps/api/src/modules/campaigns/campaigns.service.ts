@@ -2,12 +2,14 @@ import { type TenantPrismaClient, type NotificationChannelType } from "@loyaltyc
 import { AppError, type CreateCampaignInput, type UpdateCampaignInput } from "@loyaltycr/shared";
 import { resolveSegment } from "./segment-resolver.js";
 import { createAndDispatch } from "../notifications/notifications.service.js";
+import { assertWithinPlanLimit } from "../subscriptions/plan-limits.js";
 
 export async function listCampaigns(tenantDb: TenantPrismaClient) {
   return tenantDb.campaign.findMany({ orderBy: { createdAt: "desc" } });
 }
 
 export async function createCampaign(tenantDb: TenantPrismaClient, businessId: string, input: CreateCampaignInput) {
+  await assertWithinPlanLimit(businessId, "campaignsPerMonth");
   return tenantDb.campaign.create({
     data: {
       businessId,

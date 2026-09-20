@@ -16,6 +16,9 @@ import { PosPage } from "./routes/dashboard/pos/PosPage";
 import { CampaignsPage } from "./routes/dashboard/campaigns/CampaignsPage";
 import { AutomationsPage } from "./routes/dashboard/automations/AutomationsPage";
 import { CustomerPortalPage } from "./routes/portal/CustomerPortalPage";
+import { AdminLayout } from "./routes/admin/AdminLayout";
+import { AdminOverviewPage } from "./routes/admin/AdminOverviewPage";
+import { AdminBusinessesPage } from "./routes/admin/AdminBusinessesPage";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -42,6 +45,10 @@ export function App() {
             <Route path="branches" element={<BranchesPage />} />
             <Route path="team" element={<TeamPage />} />
             <Route path="settings" element={<SettingsPage />} />
+          </Route>
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminOverviewPage />} />
+            <Route path="businesses" element={<AdminBusinessesPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

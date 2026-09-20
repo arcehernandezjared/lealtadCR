@@ -11,8 +11,9 @@ Autenticación: `Authorization: Bearer <accessToken>` en cada request
 protegida. El refresh token viaja en una cookie `httpOnly` (`loyaltycr_refresh_token`),
 nunca en el body/header — el cliente nunca debe leerlo.
 
-> Este documento cubre los endpoints implementados hasta la Fase 5. Se irá
-> ampliando en cada fase (analytics avanzado/suscripciones en Fase 6, etc.).
+> Este documento cubre los endpoints implementados hasta la Fase 6 (la
+> última fase del plan original — ver `docs/ARCHITECTURE.md` para posibles
+> siguientes pasos más allá de las 6 fases).
 
 ## Auth (`/api/auth`)
 
@@ -37,6 +38,12 @@ nunca en el body/header — el cliente nunca debe leerlo.
 | POST | `/branches` | OWNER | Crea una sucursal. |
 | GET | `/employees` | MANAGER | Lista el equipo del negocio. |
 | POST | `/employees` | OWNER | Invita un empleado (crea `User` si no existe + envía email de invitación/set-password). |
+| GET | `/usage` | cualquiera | Uso actual contra los límites del plan (`{ plan, status, currentPeriodEnd, usage: [{ resource, label, current, limit }] }`). `limit: null` = sin límite. |
+
+Todos los endpoints de creación (`POST /branches`, `POST /employees`, y los de
+programas/clientes/campañas/automatizaciones más abajo) devuelven `402` con
+`error.code = "PLAN_LIMIT_REACHED"` si el negocio ya alcanzó el límite de su
+plan para ese recurso — ver "Límites de plan" en `docs/ARCHITECTURE.md`.
 
 ## Analytics (`/api/analytics`) — requiere staff autenticado
 
@@ -44,6 +51,7 @@ nunca en el body/header — el cliente nunca debe leerlo.
 |---|---|---|
 | GET | `/overview?range=today\|7d\|30d\|90d\|custom&from&to` | Estadísticas agregadas del dashboard (clientes, visitas, puntos, recompensas, tasa de retorno, actividad reciente). |
 | GET | `/series?range=...` | Series diarias para los gráficos (clientes nuevos, visitas, puntos otorgados, recompensas canjeadas). |
+| GET | `/advanced?range=...` | `{ topRewards, notificationStats, branchVisits }` — recompensas más canjeadas, entregas por canal de notificación (enviadas/fallidas), visitas por sucursal. |
 
 ## Programas (`/api/programs`) — requiere staff autenticado
 
@@ -170,6 +178,11 @@ scheduler cada hora, ver `apps/api/src/jobs/automation-scheduler.ts`).
 | PATCH | `/businesses/:businessId/status` | `{ status: "ACTIVE" \| "SUSPENDED" \| "CANCELLED" }`. |
 | GET | `/stats` | Estadísticas globales de la plataforma. |
 
-## Próximos endpoints (planeados por fase)
+## Pendiente más allá de la Fase 6
 
-- **Fase 6**: `GET /api/subscriptions`, endpoints de billing.
+Ninguno de los planes de suscripción cobra dinero todavía — `Plan`/`Subscription`
+existen y sus límites se aplican de verdad (ver `GET /api/business/usage`),
+pero no hay endpoints de billing/checkout ni integración con Stripe/SINPE
+(la sección 23 del brief pide explícitamente *no* implementar cobros reales
+todavía, solo dejar la arquitectura preparada — `STRIPE_SECRET_KEY` ya está
+declarado en `.env.example` para cuando corresponda).

@@ -298,6 +298,48 @@ Las series temporales de los gráficos usan `$queryRaw` con `date_trunc` de
 Postgres (parametrizado vía `Prisma.sql`, sin concatenación de strings) por
 no haber una forma portable de agrupar por día con el query builder de Prisma.
 
+`GET /api/analytics/advanced` (Fase 6) añade recompensas más canjeadas,
+entregas de notificación por canal y visitas por sucursal — construido sobre
+el mismo patrón de joins explícitos, no una abstracción nueva.
+
+## Límites de plan (Fase 6)
+
+`Plan.limits` es un JSON (`maxCustomers`, `maxBranches`, `maxEmployees`,
+`maxPrograms`, `maxCampaignsPerMonth`, `maxAutomations`) donde `null`
+significa "sin límite" (así está el plan PRO). `assertWithinPlanLimit()`
+(`apps/api/src/modules/subscriptions/plan-limits.ts`) se llama al **inicio**
+de cada servicio de creación relevante (clientes, sucursales, empleados,
+programas, campañas, automatizaciones), cuenta el uso actual con una query
+directa y lanza `402 PLAN_LIMIT_REACHED` si crear uno más superaría el
+límite. Si el negocio no tiene `Subscription` (no debería pasar — se crea
+una en el registro), falla cerrado con un mensaje claro en vez de permitir
+crecimiento ilimitado por un dato faltante.
+
+**Un límite mal calibrado, encontrado escribiendo los tests de esta fase**:
+`maxBranches` de STARTER estaba en `1` desde la Fase 1, pero todo negocio
+recibe una sucursal principal automática al registrarse — con el límite en
+`1`, ningún negocio STARTER hubiera podido agregar *nunca* una segunda
+sucursal, porque la primera ya la consume el registro. Se subió a `2` en
+`packages/database/prisma/seed.ts`. Relacionado: el `upsert` de los planes
+en el seed originalmente solo aplicaba `limits`/`features` en `create`, no en
+`update` — volver a correr el seed con un límite editado no tenía ningún
+efecto sobre un plan que ya existía en la base de datos. Ambas cosas se
+arreglaron juntas (ver el commit de la Fase 6).
+
+`GET /api/business/usage` expone el consumo actual contra el límite de cada
+recurso para que el dashboard pueda mostrarlo (`SettingsPage.tsx` → tarjeta
+"Plan y uso").
+
+## Panel de super admin (Fase 6)
+
+`SUPER_ADMIN` no tiene `employeeContext` (no pertenece a ningún negocio), así
+que reutilizar `DashboardLayout` —que asume una marca/plan de negocio— no
+tenía sentido. Es un área separada (`apps/web/src/routes/admin/AdminLayout.tsx`)
+montada en `/admin`, con su propio chequeo de sesión: `DashboardLayout`
+redirige a `/admin` si `useMe()` resuelve `kind === "super_admin"`, y
+`AdminLayout` redirige a `/dashboard` en el caso contrario — ninguno de los
+dos asume cuál va a ser el rol antes de que la sesión resuelva.
+
 ## Plan de fases
 
 1. **Fase 1 (completada)**: arquitectura, base de datos completa, auth,
@@ -306,7 +348,7 @@ no haber una forma portable de agrupar por día con el query builder de Prisma.
 3. **Fase 3 (completada)**: QR por cliente, portal del cliente, interfaz de empleado (POS).
 4. **Fase 4 (completada, sin credenciales reales aun)**: Apple Wallet y Google Wallet (ver docs/APPLE_WALLET.md y docs/GOOGLE_WALLET.md).
 5. **Fase 5 (completada)**: notificaciones multicanal, campañas, automatizaciones.
-6. **Fase 6**: analytics avanzado, suscripciones/planes con límites reales, administración global.
+6. **Fase 6 (completada)**: analytics avanzado, suscripciones/planes con límites reales, administración global.
 7. **Fase 7**: testing exhaustivo, hardening de seguridad, optimización, deployment a producción.
 
 ## Decisiones técnicas notables

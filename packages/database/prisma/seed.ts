@@ -8,78 +8,80 @@ async function main() {
 
   // ---------------------------------------------------------------------
   // Planes SaaS
+  //
+  // El objeto de cada plan se define UNA vez y se usa tanto en `create`
+  // como en `update`: si el upsert solo lo usara en `create`, volver a
+  // correr el seed con limites/features editados no tendria ningun efecto
+  // sobre un plan que ya existe en la base de datos (asi se nos paso por
+  // alto en un principio que bajar maxBranches de 2 a 1 no se reflejaba).
   // ---------------------------------------------------------------------
-  const plans = await Promise.all([
-    prisma.plan.upsert({
-      where: { name: "STARTER" },
-      update: {},
-      create: {
-        name: "STARTER",
-        priceMonthly: 19,
-        currency: "USD",
-        limits: {
-          maxCustomers: 300,
-          maxBranches: 1,
-          maxEmployees: 3,
-          maxPrograms: 1,
-          maxCampaignsPerMonth: 2,
-          maxAutomations: 1,
-        },
-        features: ["apple_wallet", "google_wallet", "email_notifications"],
+  const planDefinitions = [
+    {
+      name: "STARTER" as const,
+      priceMonthly: 19,
+      currency: "USD",
+      limits: {
+        maxCustomers: 300,
+        // 2, no 1: todo negocio recibe una sucursal principal automatica al
+        // registrarse (ver auth.service.ts registerBusinessOwner), asi que
+        // un limite de 1 dejaria a cualquier plan STARTER sin poder agregar
+        // nunca una segunda sucursal.
+        maxBranches: 2,
+        maxEmployees: 3,
+        maxPrograms: 1,
+        maxCampaignsPerMonth: 2,
+        maxAutomations: 1,
       },
-    }),
-    prisma.plan.upsert({
-      where: { name: "BUSINESS" },
-      update: {},
-      create: {
-        name: "BUSINESS",
-        priceMonthly: 49,
-        currency: "USD",
-        limits: {
-          maxCustomers: 2000,
-          maxBranches: 5,
-          maxEmployees: 15,
-          maxPrograms: 3,
-          maxCampaignsPerMonth: 10,
-          maxAutomations: 5,
-        },
-        features: [
-          "apple_wallet",
-          "google_wallet",
-          "email_notifications",
-          "web_push",
-          "automations",
-        ],
+      features: ["apple_wallet", "google_wallet", "email_notifications"],
+    },
+    {
+      name: "BUSINESS" as const,
+      priceMonthly: 49,
+      currency: "USD",
+      limits: {
+        maxCustomers: 2000,
+        maxBranches: 5,
+        maxEmployees: 15,
+        maxPrograms: 3,
+        maxCampaignsPerMonth: 10,
+        maxAutomations: 5,
       },
-    }),
-    prisma.plan.upsert({
-      where: { name: "PRO" },
-      update: {},
-      create: {
-        name: "PRO",
-        priceMonthly: 99,
-        currency: "USD",
-        limits: {
-          maxCustomers: null,
-          maxBranches: null,
-          maxEmployees: null,
-          maxPrograms: null,
-          maxCampaignsPerMonth: null,
-          maxAutomations: null,
-        },
-        features: [
-          "apple_wallet",
-          "google_wallet",
-          "email_notifications",
-          "web_push",
-          "whatsapp",
-          "automations",
-          "priority_support",
-        ],
+      features: ["apple_wallet", "google_wallet", "email_notifications", "web_push", "automations"],
+    },
+    {
+      name: "PRO" as const,
+      priceMonthly: 99,
+      currency: "USD",
+      limits: {
+        maxCustomers: null,
+        maxBranches: null,
+        maxEmployees: null,
+        maxPrograms: null,
+        maxCampaignsPerMonth: null,
+        maxAutomations: null,
       },
-    }),
-  ]);
-  const starterPlan = plans[0];
+      features: [
+        "apple_wallet",
+        "google_wallet",
+        "email_notifications",
+        "web_push",
+        "whatsapp",
+        "automations",
+        "priority_support",
+      ],
+    },
+  ];
+
+  const plans = await Promise.all(
+    planDefinitions.map((plan) =>
+      prisma.plan.upsert({
+        where: { name: plan.name },
+        update: { priceMonthly: plan.priceMonthly, currency: plan.currency, limits: plan.limits, features: plan.features },
+        create: plan,
+      })
+    )
+  );
+  const starterPlan = plans[0]!;
 
   // ---------------------------------------------------------------------
   // Negocio demo: Barberia XYZ
@@ -263,8 +265,26 @@ async function main() {
     },
   });
 
+  // ---------------------------------------------------------------------
+  // Super admin de la plataforma (no pertenece a ningun negocio)
+  // ---------------------------------------------------------------------
+  const superAdminPassword = await hashPassword("SuperAdmin1234!");
+  await prisma.user.upsert({
+    where: { email: "admin@loyaltycr.test" },
+    update: {},
+    create: {
+      email: "admin@loyaltycr.test",
+      passwordHash: superAdminPassword,
+      firstName: "Admin",
+      lastName: "Plataforma",
+      globalRole: "SUPER_ADMIN",
+      emailVerifiedAt: new Date(),
+    },
+  });
+
   console.log("Seed completo.");
   console.log("Login OWNER demo -> email: owner@barberiaxyz.test | password: Demo1234!");
+  console.log("Login SUPER_ADMIN demo -> email: admin@loyaltycr.test | password: SuperAdmin1234!");
 }
 
 main()
